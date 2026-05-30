@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kokoro TTS — Real-time</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg:       #0b0b0f;
+      --surface:  #13131a;
+      --border:   #252530;
+      --accent:   #6c63ff;
+      --accent2:  #b07fff;
+      --text:     #dddde8;
+      --muted:    #5c5c70;
+      --green:    #3ecf8e;
+      --red:      #f26c6c;
+      --yellow:   #f5a623;
+      --r:        10px;
+      --mono:     'Fira Code', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3rem 1rem 5rem;
+    }
+
+    header { text-align: center; margin-bottom: 2.5rem; }
+    header h1 {
+      font-size: 1.9rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    header p { color: var(--muted); margin-top: .3rem; font-size: .85rem; }
+    .badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-size: .7rem; font-family: var(--mono);
+      background: rgba(108,99,255,.12); border: 1px solid rgba(108,99,255,.25);
+      border-radius: 99px; padding: .2rem .6rem; margin-top: .6rem;
+      color: var(--accent2);
+    }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.5rem;
+      width: 100%; max-width: 660px; margin-bottom: 1.1rem;
+    }
+    .card-title {
+      font-size: .68rem; text-transform: uppercase; letter-spacing: .12em;
+      color: var(--muted); margin-bottom: 1rem;
+    }
+
+    .conn-row { display: flex; align-items: center; gap: .7rem; }
+    .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--muted); flex-shrink: 0; transition: background .3s;
+    }
+    .dot.on  { background: var(--green); box-shadow: 0 0 7px var(--green); }
+    .dot.off { background: var(--red); }
+    #connLabel { font-size: .85rem; color: var(--muted); flex: 1; }
+    #connBtn {
+      padding: .38rem .85rem; border-radius: 6px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text); font-size: .82rem; cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    #connBtn:hover { border-color: var(--accent); background: rgba(108,99,255,.1); }
+
+    label { font-size: .78rem; color: var(--muted); display: block; margin-bottom: .32rem; }
+    textarea {
+      width: 100%; resize: vertical; min-height: 100px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text);
+      font-size: .9rem; line-height: 1.55; padding: .7rem;
+      outline: none; font-family: inherit; transition: border-color .2s;
+    }
+    textarea:focus { border-color: var(--accent); }
+    .row { display: flex; gap: .9rem; margin-top: .85rem; }
+    .field { flex: 1; }
+    select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text);
+      font-size: .85rem; padding: .48rem .7rem; outline: none; cursor: pointer;
+    }
+    select:focus { border-color: var(--accent); }
+    input[type=range] { width: 100%; accent-color: var(--accent); margin-top: .5rem; }
+    #speedVal { font-size: .8rem; color: var(--accent2); font-family: var(--mono); }
+
+    .actions { display: flex; gap: .7rem; margin-top: 1.1rem; }
+    .btn-primary {
+      flex: 1; padding: .6rem 1rem; border-radius: 7px; border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-size: .9rem; font-weight: 600;
+      cursor: pointer; transition: opacity .2s, transform .1s;
+    }
+    .btn-primary:hover { opacity: .85; }
+    .btn-primary:active { transform: scale(.98); }
+    .btn-primary:disabled { opacity: .35; cursor: default; }
+    .btn-sec {
+      padding: .6rem 1rem; border-radius: 7px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text); font-size: .85rem; cursor: pointer;
+      transition: border-color .2s, color .2s;
+    }
+    .btn-sec:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+    .btn-sec:disabled { opacity: .35; cursor: default; }
+
+    .pb-wrap { margin-top: 1rem; display: flex; align-items: center; gap: .75rem; }
+    .pb-bars { display: flex; align-items: flex-end; gap: 2px; height: 22px; }
+    .pb-bars span {
+      display: block; width: 3px; border-radius: 2px;
+      background: var(--accent); height: 4px; transition: height .1s;
+    }
+    .pb-bars.playing span:nth-child(1) { animation: bar .7s ease-in-out infinite; }
+    .pb-bars.playing span:nth-child(2) { animation: bar .7s ease-in-out infinite .15s; }
+    .pb-bars.playing span:nth-child(3) { animation: bar .7s ease-in-out infinite .30s; }
+    .pb-bars.playing span:nth-child(4) { animation: bar .7s ease-in-out infinite .45s; }
+    .pb-bars.playing span:nth-child(5) { animation: bar .7s ease-in-out infinite .60s; }
+    @keyframes bar { 0%,100%{height:4px} 50%{height:18px} }
+    #pbStatus { font-size: .82rem; color: var(--muted); }
+    #pbTime   { font-size: .75rem; font-family: var(--mono); color: var(--accent2); margin-left: auto; }
+
+    .prog-track { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: .75rem; }
+    .prog-fill  {
+      height: 100%; width: 0; border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width .4s ease;
+    }
+
+    #logEl {
+      max-height: 190px; overflow-y: auto;
+      font-family: var(--mono); font-size: .72rem; line-height: 1.65;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: .7rem; color: var(--muted);
+    }
+    .l-info  { color: var(--text); }
+    .l-ok    { color: var(--green); }
+    .l-err   { color: var(--red); }
+    .l-chunk { color: var(--accent2); }
+    .l-warn  { color: var(--yellow); }
+    #clearBtn {
+      font-size: .72rem; color: var(--muted); background: none;
+      border: none; cursor: pointer; padding: 0; margin-top: .4rem;
+      text-decoration: underline;
+    }
+    #clearBtn:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎙 Kokoro TTS</h1>
+  <p>Real-time streaming — binary PCM over WebSocket</p>
+  <span class="badge">⚡ Web Audio API scheduler · zero base64 overhead</span>
+</header>
+
+<div class="card">
+  <div class="card-title">Connection</div>
+  <div class="conn-row">
+    <div class="dot off" id="dot"></div>
+    <span id="connLabel">Disconnected</span>
+    <button id="connBtn" onclick="toggleConn()">Connect</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Synthesise</div>
+  <label for="textIn">Text</label>
+  <textarea id="textIn">The Web Audio API scheduler ensures each chunk plays exactly when the previous one ends — completely gapless, completely real-time.</textarea>
+  <div class="row">
+    <div class="field">
+      <label for="voiceSel">Voice</label>
+      <select id="voiceSel">
+        <option value="af_heart">Heart — US Female</option>
+        <option value="af_bella">Bella — US Female</option>
+        <option value="af_nicole">Nicole — US Female</option>
+        <option value="af_sarah">Sarah — US Female</option>
+        <option value="af_sky">Sky — US Female</option>
+        <option value="am_adam">Adam — US Male</option>
+        <option value="am_michael">Michael — US Male</option>
+        <option value="bf_emma">Emma — GB Female</option>
+        <option value="bf_isabella">Isabella — GB Female</option>
+        <option value="bm_george">George — GB Male</option>
+        <option value="bm_lewis">Lewis — GB Male</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Speed — <span id="speedVal">1.00×</span></label>
+      <input type="range" id="speedIn" min="0.5" max="2.0" step="0.05" value="1.0"
+             oninput="document.getElementById('speedVal').textContent=parseFloat(this.value).toFixed(2)+'×'"/>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-primary" id="synthBtn" onclick="synthesise()" disabled>▶ Synthesise</button>
+    <button class="btn-sec"     id="stopBtn"  onclick="stopAll()"    disabled>■ Stop</button>
+  </div>
+  <div class="pb-wrap">
+    <div class="pb-bars" id="pbBars">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <span id="pbStatus">idle</span>
+    <span id="pbTime"></span>
+  </div>
+  <div class="prog-track"><div class="prog-fill" id="prog"></div></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Event log</div>
+  <div id="logEl"></div>
+  <button id="clearBtn" onclick="document.getElementById('logEl').innerHTML=''">clear</button>
+</div>
+
+<script>
+"use strict";
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let socket        = null;
+let audioCtx      = null;
+let nextStartTime = 0;   // end-time of the last scheduled chunk on the audio timeline
+let chunksRx      = 0;
+let isSynthing    = false;
+let rafId         = null;
+
+const SAMPLE_RATE = 24_000;
+const LOOKAHEAD   = 0.08;  // seconds — tiny buffer so first chunk doesn't underrun
+
+// ── DOM ────────────────────────────────────────────────────────────────────────
+const dot       = document.getElementById("dot");
+const connLabel = document.getElementById("connLabel");
+const connBtn   = document.getElementById("connBtn");
+const synthBtn  = document.getElementById("synthBtn");
+const stopBtn   = document.getElementById("stopBtn");
+const pbBars    = document.getElementById("pbBars");
+const pbStatus  = document.getElementById("pbStatus");
+const pbTime    = document.getElementById("pbTime");
+const prog      = document.getElementById("prog");
+const logEl     = document.getElementById("logEl");
+
+// ── Logging ────────────────────────────────────────────────────────────────────
+function log(msg, cls = "l-info") {
+  const ts  = new Date().toLocaleTimeString("en", { hour12: false });
+  const div = Object.assign(document.createElement("div"), {
+    className: cls, textContent: `[${ts}] ${msg}`
+  });
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── Playback clock ─────────────────────────────────────────────────────────────
+function startClock() {
+  const t0 = audioCtx.currentTime;
+  function tick() {
+    pbTime.textContent = (audioCtx.currentTime - t0).toFixed(1) + "s";
+    rafId = requestAnimationFrame(tick);
+  }
+  rafId = requestAnimationFrame(tick);
+}
+function stopClock() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  pbTime.textContent = "";
+}
+
+// ── AudioContext ───────────────────────────────────────────────────────────────
+// Must be created (or resumed) inside a user gesture.
+function ensureCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate:  SAMPLE_RATE,
+      latencyHint: "playback",
+    });
+    log(`AudioContext  sampleRate=${audioCtx.sampleRate} Hz`, "l-ok");
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+// ── Core: schedule one PCM chunk onto the Web Audio timeline ──────────────────
+//
+// The key insight:  nextStartTime tracks where audio ends on the timeline.
+// Every new chunk starts exactly at nextStartTime, so chunks chain gaplessly.
+// Math.max(ctx.currentTime + LOOKAHEAD, nextStartTime) handles:
+//   • first chunk ever (nextStartTime = 0, so we start just slightly ahead)
+//   • recovery from a stall (network pause > chunk duration)
+//
+function scheduleChunk(arrayBuffer) {
+  // 1. View the raw bytes as int16
+  const pcm16   = new Int16Array(arrayBuffer);
+
+  // 2. Convert int16 → float32 (Web Audio uses float32 internally)
+  const float32 = new Float32Array(pcm16.length);
+  for (let i = 0; i < pcm16.length; i++) {
+    float32[i] = pcm16[i] / 32768.0;
+  }
+
+  // 3. Wrap in an AudioBuffer (mono, 24 kHz)
+  const audioBuf = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
+  audioBuf.copyToChannel(float32, 0);
+
+  // 4. Create a one-shot source and connect it to the speaker
+  const source = audioCtx.createBufferSource();
+  source.buffer = audioBuf;
+  source.connect(audioCtx.destination);
+
+  // 5. Schedule it gaplessly after the previous chunk
+  const when     = Math.max(audioCtx.currentTime + LOOKAHEAD, nextStartTime);
+  source.start(when);
+  nextStartTime  = when + audioBuf.duration;   // ← advance the cursor
+
+  // 6. When this source finishes, check if we should reset UI
+  source.onended = () => {
+    if (!isSynthing && audioCtx.currentTime >= nextStartTime - 0.05) {
+      setIdle("done");
+    }
+  };
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+function setPlaying(msg) {
+  pbBars.classList.add("playing");
+  pbStatus.textContent = msg;
+  pbStatus.style.color = "var(--green)";
+  stopBtn.disabled     = false;
+}
+function setIdle(msg = "idle") {
+  pbBars.classList.remove("playing");
+  pbStatus.textContent = msg;
+  pbStatus.style.color = "var(--muted)";
+  stopBtn.disabled     = true;
+  synthBtn.disabled    = !(socket?.connected);
+  isSynthing           = false;
+  stopClock();
+}
+
+// ── Connection ─────────────────────────────────────────────────────────────────
+function toggleConn() {
+  socket?.connected ? socket.disconnect() : connect();
+}
+
+function connect() {
+  log(`Connecting to ${location.origin} …`, "l-warn");
+  socket = io(location.origin, { transports: ["websocket"] });
+
+  socket.on("connect", () => {
+    dot.className        = "dot on";
+    connLabel.textContent = "Connected";
+    connBtn.textContent   = "Disconnect";
+    synthBtn.disabled    = false;
+    log("WebSocket connected ✓", "l-ok");
+  });
+
+  socket.on("disconnect", () => {
+    dot.className        = "dot off";
+    connLabel.textContent = "Disconnected";
+    connBtn.textContent   = "Connect";
+    synthBtn.disabled    = true;
+    setIdle("disconnected");
+    log("WebSocket disconnected", "l-warn");
+  });
+
+  socket.on("connected", d => {
+    log(`Server ready  encoding=${d.encoding}  sampleRate=${d.sample_rate}`, "l-info");
+  });
+
+  // ── synthesis_start ──────────────────────────────────────────────────────
+  socket.on("synthesis_start", d => {
+    ensureCtx();             // must be called in response to user gesture chain
+    chunksRx      = 0;
+    nextStartTime = 0;       // reset the scheduler cursor
+    isSynthing    = true;
+    synthBtn.disabled = true;
+    prog.style.width  = "0%";
+    setPlaying(`${d.voice}  ·  ${d.speed}×`);
+    startClock();
+    log(`synthesis_start  voice=${d.voice}  speed=${d.speed}`, "l-info");
+  });
+
+  // ── audio_chunk ──────────────────────────────────────────────────────────
+  // data.pcm is an ArrayBuffer of raw int16 PCM (24 kHz, mono)
+  // No base64 decode, no WAV parsing — hand it straight to the scheduler.
+  socket.on("audio_chunk", d => {
+    if (!d.pcm) { log("chunk missing .pcm buffer — skipped", "l-warn"); return; }
+
+    scheduleChunk(d.pcm);   // ← schedule immediately, gapless
+
+    chunksRx++;
+    prog.style.width     = Math.min(95, chunksRx * 10) + "%";
+    pbStatus.textContent = `playing  chunk ${d.index}`;
+    log(`chunk ${String(d.index).padStart(3)} | ${d.pcm.byteLength} B | "${d.graphemes}"`, "l-chunk");
+  });
+
+  // ── synthesis_done ───────────────────────────────────────────────────────
+  socket.on("synthesis_done", d => {
+    isSynthing = false;
+    synthBtn.disabled = false;
+    prog.style.width  = "100%";
+    log(`synthesis_done  ${d.total_chunks} chunks  ${d.duration_sec}s`, "l-ok");
+    // UI resets to idle once the last scheduled chunk's onended fires
+  });
+
+  socket.on("error", d => {
+    isSynthing = false;
+    synthBtn.disabled = false;
+    setIdle("error");
+    log(`Error: ${d.message}`, "l-err");
+  });
+
+  socket.on("cancelled", () => {
+    setIdle("cancelled");
+    log("Synthesis cancelled", "l-warn");
+  });
+}
+
+// ── Synthesise ─────────────────────────────────────────────────────────────────
+function synthesise() {
+  const text  = document.getElementById("textIn").value.trim();
+  const voice = document.getElementById("voiceSel").value;
+  const speed = parseFloat(document.getElementById("speedIn").value);
+
+  if (!text)             { log("No text provided", "l-err"); return; }
+  if (!socket?.connected) { log("Not connected",    "l-err"); return; }
+
+  socket.emit("synthesize", { text, voice, speed });
+}
+
+// ── Stop ───────────────────────────────────────────────────────────────────────
+function stopAll() {
+  socket?.emit("cancel");          // tell server to stop sending
+  if (audioCtx) {
+    // Suspend kills buffered audio instantly; resume re-enables future playback
+    audioCtx.suspend().then(() => audioCtx.resume());
+    nextStartTime = 0;
+  }
+  isSynthing = false;
+  setIdle("stopped");
+  log("Stopped", "l-warn");
+}
+</script>
+</body>
+</html>

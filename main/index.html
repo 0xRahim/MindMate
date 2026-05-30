@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VRM Live</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b1020;--panel:rgba(16,22,40,.93);--panel2:rgba(22,31,56,.95);
+      --text:#e9eefc;--muted:#8a97be;--accent:#7c8cff;--teal:#7ef0d6;
+      --green:#3ecf8e;--red:#ff6b8a;--yellow:#f5b942;
+      --border:rgba(148,163,184,.16);--r:16px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden;
+      background:radial-gradient(circle at top,#16213a,var(--bg) 55%,#060913);
+      color:var(--text);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+    #app{position:fixed;inset:0;display:grid;grid-template-columns:370px 1fr}
+    #panel{z-index:20;padding:14px 13px 28px;border-right:1px solid var(--border);
+      background:linear-gradient(180deg,rgba(10,15,28,.97),rgba(8,12,23,.88));
+      backdrop-filter:blur(14px);overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+    #panel::-webkit-scrollbar{width:4px}
+    #panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.07);border-radius:2px}
+    .ph h1{font-size:19px;font-weight:800;letter-spacing:-.4px}
+    .ph p{color:var(--muted);font-size:11px;margin-top:2px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:12px}
+    .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+      margin-bottom:7px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+    .lbl span{font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0}
+    .conn-row{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .3s}
+    .dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+    .dot.off{background:var(--red)}
+    #ttsLabel{font-size:12px;color:var(--muted);flex:1}
+    input[type=text],input[type=file],textarea,select{
+      width:100%;border-radius:10px;border:1px solid var(--border);
+      background:rgba(255,255,255,.04);color:var(--text);
+      padding:8px 10px;font-size:13px;outline:none;transition:border-color .2s;font-family:inherit}
+    input[type=text]:focus,textarea:focus{border-color:rgba(124,140,255,.5)}
+    textarea{min-height:68px;resize:vertical;line-height:1.5}
+    button{appearance:none;border:0;border-radius:10px;padding:8px 11px;
+      background:linear-gradient(180deg,#7c8cff,#5f6eee);color:#fff;font-weight:700;
+      font-size:12px;cursor:pointer;transition:transform .12s,opacity .12s;white-space:nowrap}
+    button:hover:not(:disabled){transform:translateY(-1px)}
+    button:active:not(:disabled){transform:scale(.98)}
+    button:disabled{opacity:.35;cursor:default}
+    button.sec{background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text)}
+    button.danger{background:linear-gradient(180deg,#ff6b8a,#e0394f)}
+    button.go{background:linear-gradient(180deg,#3ecf8e,#28a870)}
+    button.mic-on{background:linear-gradient(180deg,#ff6b8a,#e0394f)!important;
+      border-color:var(--red)!important;color:#fff!important;
+      animation:mic-pulse 1.2s ease-in-out infinite}
+    @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,107,138,.4)}50%{box-shadow:0 0 0 6px rgba(255,107,138,0)}}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+    .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .mt{margin-top:8px}
+    /* Chat */
+    .chat-history{max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;
+      padding:8px;background:rgba(0,0,0,.22);border-radius:10px;border:1px solid var(--border);
+      margin-bottom:8px;scroll-behavior:smooth}
+    .chat-history::-webkit-scrollbar{width:3px}
+    .chat-history::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:2px}
+    .chat-msg{font-size:12px;line-height:1.45;display:flex;gap:6px;align-items:flex-start}
+    .chat-msg .who{font-size:10px;font-weight:700;flex-shrink:0;padding-top:1px;min-width:22px}
+    .chat-msg.user .who{color:var(--accent)}.chat-msg.bot .who{color:var(--teal)}
+    .chat-msg .body{color:var(--text)}.chat-msg.user .body{color:var(--muted)}
+    .chat-msg.sys .body{color:var(--yellow);font-style:italic;font-size:11px}
+    .chat-input-row{display:flex;gap:6px;align-items:center}
+    .chat-input-row input{flex:1;padding:8px 10px}
+    .chat-input-row button{padding:8px 10px;flex-shrink:0}
+    #chatState{font-size:11px;color:var(--muted);margin-top:5px;min-height:16px;
+      display:flex;align-items:center;gap:6px}
+    .tdots{display:inline-flex;gap:3px}
+    .tdots span{width:4px;height:4px;border-radius:50%;background:var(--accent);
+      animation:td .9s ease-in-out infinite}
+    .tdots span:nth-child(2){animation-delay:.2s}.tdots span:nth-child(3){animation-delay:.4s}
+    @keyframes td{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
+    /* Anim/emote */
+    .anim-btn,.emote-btn{background:rgba(255,255,255,.04);border:1px solid var(--border);
+      color:var(--muted);font-weight:600;font-size:11px;padding:7px 5px;
+      text-align:center;border-radius:9px;line-height:1.35;
+      transition:border-color .2s,color .2s,background .2s,transform .12s}
+    .anim-btn:hover{color:var(--text);border-color:var(--teal);background:rgba(126,240,214,.07)}
+    .anim-btn.active{background:rgba(126,240,214,.12);border-color:var(--teal);color:var(--teal)}
+    .emote-btn:hover{color:var(--text);border-color:var(--accent)}
+    .emote-btn.active{background:rgba(124,140,255,.15);border-color:var(--accent);color:var(--accent)}
+    /* Misc */
+    .status{font-size:11px;color:var(--muted);line-height:1.5}
+    .status strong{color:var(--text)}
+    .amp-row{display:flex;align-items:center;gap:7px;margin-top:7px}
+    .amp-track{flex:1;height:3px;background:var(--border);border-radius:99px;overflow:hidden}
+    .amp-fill{height:100%;width:0;border-radius:99px;
+      background:linear-gradient(90deg,var(--accent),var(--teal));transition:width .04s linear}
+    .amp-lbl{font-size:10px;color:var(--muted);width:28px;text-align:right;font-variant-numeric:tabular-nums}
+    .voice-row{display:flex;gap:7px;align-items:flex-end;margin-top:7px}
+    .voice-row select{flex:1}
+    .spd{display:flex;flex-direction:column;gap:3px;flex-shrink:0}
+    .spd label{font-size:10px;color:var(--muted)}
+    .spd input{width:84px;accent-color:var(--accent)}
+    .sl-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    .sl-item label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+    .sl-item input{width:100%;accent-color:var(--accent)}
+    /* Canvas */
+    #canvasWrap{position:relative;min-width:0}
+    canvas{display:block}
+    .overlay{position:absolute;left:16px;bottom:16px;z-index:10;
+      max-width:min(540px,calc(100vw - 406px));padding:10px 13px;border-radius:13px;
+      background:rgba(6,10,20,.65);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(10px)}
+    .ov-title{font-size:11px;color:var(--teal);font-weight:700;margin-bottom:3px;
+      display:flex;align-items:center;gap:6px}
+    .loader{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--teal);
+      box-shadow:0 0 0 4px rgba(126,240,214,.12);animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(126,240,214,.12)}50%{box-shadow:0 0 0 7px rgba(126,240,214,.22)}}
+    .ov-text{font-size:13px;line-height:1.5}
+    #nowPlaying{position:absolute;top:12px;right:12px;z-index:10;padding:5px 11px;
+      border-radius:99px;background:rgba(6,10,20,.75);border:1px solid var(--teal);
+      font-size:11px;color:var(--teal);font-weight:700;display:none;align-items:center;gap:5px}
+    @media(max-width:980px){
+      #app{grid-template-columns:1fr;grid-template-rows:1fr auto}
+      #panel{border-right:0;border-top:1px solid var(--border);max-height:44vh}
+      .overlay{max-width:calc(100vw - 32px)}
+    }
+  </style>
+  <script type="importmap">
+  {"imports":{
+    "three":            "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/":    "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2/lib/three-vrm.module.min.js"
+  }}
+  </script>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <div class="ph"><h1>&#127917; VRM Live</h1><p>AI Character &#183; Kokoro TTS &#183; Mixamo FBX &#183; Real-time lip sync</p></div>
+
+    <!-- Chat -->
+    <div class="card">
+      <div class="lbl">Chat <span id="chatStateLbl"></span></div>
+      <div class="chat-history" id="chatHistory"></div>
+      <div class="chat-input-row">
+        <input id="chatInput" type="text" placeholder="Type a message or use mic&#8230;"
+               onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"/>
+        <button class="sec" id="micBtn" onclick="toggleMic()" title="Voice input">&#127908;</button>
+        <button id="sendBtn" onclick="sendChat()">Send</button>
+      </div>
+      <div id="chatState"></div>
+    </div>
+
+    <!-- TTS -->
+    <div class="card">
+      <div class="lbl">Kokoro TTS Server</div>
+      <div class="conn-row"><div class="dot off" id="ttsDot"></div><span id="ttsLabel">Not connected</span></div>
+      <input id="ttsUrl" type="text" placeholder="http://10.19.102.206:5000" value="http://localhost:5000"/>
+      <div class="g2 mt">
+        <button class="go" id="connectBtn" onclick="connectTTS()">Connect</button>
+        <button class="sec" id="disconnectBtn" onclick="disconnectTTS()" disabled>Disconnect</button>
+      </div>
+      <div id="ttsMsg" class="status mt" style="margin-top:6px"></div>
+      <div class="amp-row" id="ampRow" style="display:none">
+        <span style="font-size:10px;color:var(--muted)">Lip</span>
+        <div class="amp-track"><div class="amp-fill" id="ampFill"></div></div>
+        <span class="amp-lbl" id="ampLbl">0%</span>
+      </div>
+    </div>
+
+    <!-- VRM -->
+    <div class="card">
+      <div class="lbl">VRM Model</div>
+      <input id="vrmFile" type="file" accept=".vrm"/>
+      <div id="serverModels" style="display:none;margin-top:8px">
+        <div class="lbl" style="margin-bottom:5px">From server</div>
+        <div id="serverModelBtns" class="g2"></div>
+      </div>
+      <div id="vrmStatus" class="status mt" style="margin-top:7px">No model loaded.</div>
+    </div>
+
+    <!-- Scene Position -->
+    <div class="card">
+      <div class="lbl">Character Position <span id="soafStatus" style="color:var(--teal)"></span></div>
+      <div class="sl-grid">
+        <div class="sl-item">
+          <label>Left / Right &nbsp;<strong id="charXVal">1.35</strong></label>
+          <input id="charX" type="range" min="-4" max="4" step="0.05" value="1.35"
+                 oninput="updateCharPos()"/>
+        </div>
+        <div class="sl-item">
+          <label>Fwd / Back &nbsp;<strong id="charZVal">1.00</strong></label>
+          <input id="charZ" type="range" min="-4" max="4" step="0.05" value="1.00"
+                 oninput="updateCharPos()"/>
+        </div>
+        <div class="sl-item" style="grid-column:1/-1">
+          <label>Up / Down &nbsp;<strong id="charYVal">1.76</strong></label>
+          <input id="charY" type="range" min="-2" max="2" step="0.02" value="1.76"
+                 oninput="updateCharPos()"/>
+        </div>
+      </div>
+      <div class="g2 mt">
+        <button class="sec" onclick="resetCharPos()">&#8635; Reset</button>
+        <button class="sec" id="camBtn">&#127909; Home Cam</button>
+      </div>
+    </div>
+
+    <!-- Manual Speak -->
+    <div class="card">
+      <div class="lbl">Manual Speak</div>
+      <textarea id="replyText" spellcheck="false" placeholder="Type text to speak directly&#8230;"></textarea>
+      <div class="voice-row">
+        <select id="voiceSelect">
+          <option value="af_heart">Heart &#8212; US F</option>
+          <option value="af_bella">Bella &#8212; US F</option>
+          <option value="af_nicole">Nicole &#8212; US F</option>
+          <option value="af_sarah">Sarah &#8212; US F</option>
+          <option value="af_sky">Sky &#8212; US F</option>
+          <option value="am_adam">Adam &#8212; US M</option>
+          <option value="am_michael">Michael &#8212; US M</option>
+          <option value="bf_emma">Emma &#8212; GB F</option>
+          <option value="bf_isabella">Isabella &#8212; GB F</option>
+          <option value="bm_george">George &#8212; GB M</option>
+          <option value="bm_lewis">Lewis &#8212; GB M</option>
+        </select>
+        <div class="spd">
+          <label>Speed <strong id="spdVal">1.0x</strong></label>
+          <input type="range" id="spdInput" min="0.5" max="2.0" step="0.05" value="1.0"
+                 oninput="document.getElementById('spdVal').textContent=parseFloat(this.value).toFixed(2)+'x'"/>
+        </div>
+      </div>
+      <div class="g2 mt">
+        <button id="speakBtn" onclick="speak()" disabled>&#9654; Speak</button>
+        <button class="danger" onclick="stopSpeaking()">&#9632; Stop</button>
+      </div>
+    </div>
+
+    <!-- Animations -->
+    <div class="card">
+      <div class="lbl">FBX Animations <span id="animCountLbl"></span></div>
+      <div id="animGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"></div>
+      <div class="g2 mt">
+        <button class="sec" id="stopAnimBtn" onclick="stopAnimation()" disabled>&#9632; Stop</button>
+        <button class="sec" id="loopBtn" onclick="toggleLoop()">&#128257; Loop: On</button>
+      </div>
+      <div id="animStatus" class="status mt" style="margin-top:6px"></div>
+    </div>
+
+    <!-- Emotes -->
+    <div class="card">
+      <div class="lbl">Emotes <span id="emoteHint"></span></div>
+      <div class="g4" id="emoteGrid"></div>
+    </div>
+
+    <!-- Debug -->
+    <div class="card">
+      <div class="lbl">Expression debug</div>
+      <div class="sl-grid">
+        <div class="sl-item"><label>Mouth open</label><input id="mouthOpen" type="range" min="0" max="1" step="0.01" value="0"/></div>
+        <div class="sl-item"><label>Smile</label>    <input id="smile"     type="range" min="0" max="1" step="0.01" value="0"/></div>
+        <div class="sl-item"><label>Blink</label>    <input id="blink"     type="range" min="0" max="1" step="0.01" value="0"/></div>
+        <div class="sl-item"><label>Surprise</label> <input id="surprise"  type="range" min="0" max="1" step="0.01" value="0"/></div>
+      </div>
+      <div class="g2 mt">
+        <button class="sec" id="resetFaceBtn">Reset Face</button>
+        <button class="sec" id="blinkBtn">Blink: Auto</button>
+      </div>
+    </div>
+  </aside>
+
+  <main id="canvasWrap">
+    <div class="overlay">
+      <div class="ov-title"><span class="loader"></span> Live preview</div>
+      <div id="overlayText" class="ov-text">Load a VRM model to begin.</div>
+    </div>
+    <div id="nowPlaying">&#9654; <span id="nowPlayingName"></span></div>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }             from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }                from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader }                 from 'three/addons/loaders/FBXLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+// ── Mixamo → VRM bone map (official pixiv) ──────────────────────────────────
+const mixamoVRMRigMap = {
+  mixamorigHips:'hips',mixamorigSpine:'spine',mixamorigSpine1:'chest',
+  mixamorigSpine2:'upperChest',mixamorigNeck:'neck',mixamorigHead:'head',
+  mixamorigLeftShoulder:'leftShoulder',mixamorigLeftArm:'leftUpperArm',
+  mixamorigLeftForeArm:'leftLowerArm',mixamorigLeftHand:'leftHand',
+  mixamorigRightShoulder:'rightShoulder',mixamorigRightArm:'rightUpperArm',
+  mixamorigRightForeArm:'rightLowerArm',mixamorigRightHand:'rightHand',
+  mixamorigLeftUpLeg:'leftUpperLeg',mixamorigLeftLeg:'leftLowerLeg',
+  mixamorigLeftFoot:'leftFoot',mixamorigLeftToeBase:'leftToes',
+  mixamorigRightUpLeg:'rightUpperLeg',mixamorigRightLeg:'rightLowerLeg',
+  mixamorigRightFoot:'rightFoot',mixamorigRightToeBase:'rightToes',
+};
+
+// ── Official pixiv loadMixamoAnimation ─────────────────────────────────────
+function loadMixamoAnimation(url, vrm) {
+  return new FBXLoader().loadAsync(url).then(asset => {
+    const clip = THREE.AnimationClip.findByName(asset.animations,'mixamo.com')
+              ?? asset.animations[0];
+    if (!clip) throw new Error('No animation in ' + url);
+    const restRotInv=new THREE.Quaternion(), parentRestWQ=new THREE.Quaternion();
+    const _q=new THREE.Quaternion();
+    const mixHips=asset.getObjectByName('mixamorigHips');
+    const motionH=mixHips?mixHips.position.y:1;
+    let vrmH=1;
+    try{vrmH=vrm.humanoid.normalizedRestPose.hips?.position?.[1]??1;}catch(_){}
+    const hipsScale=Math.abs(motionH)>1e-6?vrmH/motionH:1;
+    const isVRM0=vrm.meta?.metaVersion==='0';
+    const tracks=[];
+    clip.tracks.forEach(track=>{
+      const [mixBone,prop]=track.name.split('.');
+      const vrmKey=mixamoVRMRigMap[mixBone];
+      const vrmNode=vrm.humanoid.getNormalizedBoneNode(vrmKey);
+      const fbxNode=asset.getObjectByName(mixBone);
+      if(!vrmKey||!vrmNode||!fbxNode) return;
+      fbxNode.getWorldQuaternion(restRotInv).invert();
+      fbxNode.parent.getWorldQuaternion(parentRestWQ);
+      if(track instanceof THREE.QuaternionKeyframeTrack){
+        for(let i=0;i<track.values.length;i+=4){
+          _q.fromArray(track.values,i).premultiply(parentRestWQ).multiply(restRotInv);
+          _q.toArray(track.values,i);
+        }
+        const vals=isVRM0?track.values.map((v,i)=>i%2===0?-v:v):track.values.slice();
+        tracks.push(new THREE.QuaternionKeyframeTrack(`${vrmNode.name}.${prop}`,track.times,vals));
+      } else if(track instanceof THREE.VectorKeyframeTrack){
+        const vals=track.values.map((v,i)=>(isVRM0&&i%3!==1?-v:v)*hipsScale);
+        tracks.push(new THREE.VectorKeyframeTrack(`${vrmNode.name}.${prop}`,track.times,vals));
+      }
+    });
+    return new THREE.AnimationClip('vrmAnim',clip.duration,tracks);
+  });
+}
+
+// ── Emote data ──────────────────────────────────────────────────────────────
+const EMOTES=[
+  {id:'idle',label:'Idle',hint:'Rest'},{id:'wave',label:'Wave',hint:'Wave'},
+  {id:'nod',label:'Nod',hint:'Nod'},{id:'dance',label:'Dance',hint:'Dance'},
+  {id:'think',label:'Think',hint:'Think'},{id:'bounce',label:'Bounce',hint:'Bounce'},
+  {id:'shrug',label:'Shrug',hint:'Shrug'},{id:'point',label:'Point',hint:'Point'},
+];
+
+// ── Scene ───────────────────────────────────────────────────────────────────
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x08090f); // dark fallback until GLB loads
+// No fog — interior room provides natural depth/occlusion
+const camera=new THREE.PerspectiveCamera(34,1,.1,100);
+camera.position.set(0,1.45,3);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.getElementById('canvasWrap').appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.target.set(0,1.35,0);controls.update();
+// Interior-tuned lighting: warm ceiling fill + character key/fill/rim
+scene.add(new THREE.HemisphereLight(0xffe8cc,0x1a1008,0.65));
+const kl=new THREE.DirectionalLight(0xfff5e0,2.0);kl.position.set(2,4,3);
+kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.camera.near=0.5;kl.shadow.camera.far=20;scene.add(kl);
+const fl=new THREE.DirectionalLight(0xd0c8ff,0.5);fl.position.set(-2,2,2);scene.add(fl);
+const rl=new THREE.DirectionalLight(0xffcf80,0.45);rl.position.set(0,3,-2);scene.add(rl);
+// No GridHelper / floor placeholder — 3D background provides floor and walls
+
+// ── 3D Background (loft interior) ────────────────────────────────────────────
+// Loaded from background/ subfolder. Auto-scales so ceiling height ≈ 4 m,
+// floors the model at Y=0 (where the VRM character stands), and centers it.
+// After loading, scans every mesh name for sofa/couch keywords and positions
+// the VRM character in front of the nearest sofa face.
+(function loadBackground(){
+  const bgLoader=new GLTFLoader();
+  bgLoader.load(
+    'background/loft_5_interior_for_free.glb',
+    ({scene:bg})=>{
+      // ── Scale & position the room ─────────────────────────────────────────
+      const box=new THREE.Box3().setFromObject(bg);
+      const sz=box.getSize(new THREE.Vector3());
+      const ctr=box.getCenter(new THREE.Vector3());
+      const s=4.0/sz.y;                     // scale so room height = 4 m
+      bg.scale.setScalar(s);
+      bg.position.set(-ctr.x*s, -box.min.y*s, -ctr.z*s);
+      bg.traverse(o=>{ if(o.isMesh){ o.receiveShadow=true; if(o.material)o.material.depthWrite=true; } });
+      scene.add(bg);
+      scene.background=null;
+      console.log('[BG] Loft loaded · scale:',s.toFixed(3),'· room size:',sz.x.toFixed(1),'×',sz.y.toFixed(1),'×',sz.z.toFixed(1),'m');
+
+      // ── Log all mesh names (helps identify sofa if auto-detect misses) ────
+      const meshNames=[];
+      bg.traverse(o=>{ if(o.isMesh&&o.name) meshNames.push(o.name); });
+      meshNames.sort();
+      console.log('[BG] Mesh names:\n  '+meshNames.join('\n  '));
+
+      // ── Auto-detect sofa / couch ──────────────────────────────────────────
+      const SOFA_RE=/sofa|couch|settee|divan|loveseat|sectional/i;
+      let sofaMesh=null;
+      bg.traverse(o=>{ if(!sofaMesh&&o.isMesh&&SOFA_RE.test(o.name)) sofaMesh=o; });
+
+      if(sofaMesh){
+        // Get the sofa's world-space bounding box (bg transforms already applied)
+        const sofaBox=new THREE.Box3().setFromObject(sofaMesh);
+        const sofaCtr=sofaBox.getCenter(new THREE.Vector3());
+        // "In front of sofa" = sofa centre X, and standing 0.5 m past the sofa's
+        // closest face toward +Z (which is toward the camera at Z=3).
+        const fwdZ=sofaBox.max.z+0.5;
+        _setCharPos(sofaCtr.x, 0, fwdZ, true);
+        console.log('[BG] Sofa detected:',sofaMesh.name,'→ character at',sofaCtr.x.toFixed(2),fwdZ.toFixed(2));
+      } else {
+        console.warn('[BG] No sofa mesh matched — use the Position sliders to place the character. Mesh list above.');
+        $('soafStatus').textContent='(use sliders)';
+      }
+    },
+    xhr=>{ if(xhr.total)console.log('[BG]',Math.round(xhr.loaded/xhr.total*100)+'% …'); },
+    e=>console.error('[BG] Failed to load background GLB:',e)
+  );
+})();
+
+// ── State ───────────────────────────────────────────────────────────────────
+let vrm=null,blobUrl=null,activeEmote='idle',autoBlink=true;
+let blinkV=0,blinkH=0,mouthDrive=0,mouthSeed=Math.random()*1000,speaking=false;
+const clock=new THREE.Clock();
+let socket=null,ttsConnected=false;
+let audioCtx=null,analyser=null,analyserData=null,nextStart=0;
+let mixer=null,activeAction=null,fbxPlaying=false,loopAnimation=true;
+const clipCache=new Map();
+// Deferred animation actions — both activated on first audio_chunk for tight sync
+let _pendingLoop=null, _pendingShot=null, _firstChunk=true;
+// Auto-idle: plays a looping FBX idle when nothing else is active
+let autoIdle=false, idleCycleAt=Infinity;
+// synthActive: true between socket.emit('synthesize') and synthesis fully done
+let synthActive=false;
+// Character world-space position (placed in front of sofa or manually tuned)
+let charPos={x:1.35,y:1.76,z:1.00};
+let chatHistory=[];
+const $=id=>document.getElementById(id);
+
+// ── Chat helpers ────────────────────────────────────────────────────────────
+function addMsg(role,text){
+  const d=document.createElement('div');
+  d.className='chat-msg '+role;
+  const who=role==='user'?'You':role==='bot'?'Her':'...';
+  d.innerHTML=`<span class="who">${who}</span><span class="body">${escHtml(text)}</span>`;
+  $('chatHistory').appendChild(d);
+  $('chatHistory').scrollTop=$('chatHistory').scrollHeight;
+  if(role!=='sys') chatHistory.push({role:role==='bot'?'assistant':'user',content:text});
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function setChatState(s){
+  const el=$('chatState');
+  if(s==='thinking') el.innerHTML='<span style="color:var(--yellow)">Thinking</span><span class="tdots"><span></span><span></span><span></span></span>';
+  else if(s==='speaking') el.innerHTML='<span style="color:var(--teal)">&#9654; Speaking</span>';
+  else if(s==='listening') el.innerHTML='<span style="color:var(--red)">&#9679; Listening</span>';
+  else el.innerHTML=s?`<span style="color:var(--red)">${escHtml(s)}</span>`:'';
+}
+
+// ── Audio / AnalyserNode ────────────────────────────────────────────────────
+function ensureAudio(){
+  if(audioCtx){if(audioCtx.state==='suspended')audioCtx.resume();return;}
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)({sampleRate:24000,latencyHint:'playback'});
+  analyser=audioCtx.createAnalyser();analyser.fftSize=512;analyser.smoothingTimeConstant=0.6;
+  analyserData=new Uint8Array(analyser.frequencyBinCount);analyser.connect(audioCtx.destination);
+}
+function scheduleChunk(buf){
+  ensureAudio();
+  const p16=new Int16Array(buf),f32=new Float32Array(p16.length);
+  for(let i=0;i<p16.length;i++)f32[i]=p16[i]/32768;
+  const ab=audioCtx.createBuffer(1,f32.length,24000);ab.copyToChannel(f32,0);
+  const src=audioCtx.createBufferSource();src.buffer=ab;src.connect(analyser);
+  const LOOKAHEAD=0.08;
+  const when=Math.max(audioCtx.currentTime+LOOKAHEAD,nextStart);
+  src.start(when);nextStart=when+ab.duration;speaking=true;
+  src.onended=()=>{if(audioCtx.currentTime>=nextStart-0.05){speaking=false;synthActive=false;setChatState('');setTimeout(startIdleLoop,450);}};
+}
+function audioRMS(){
+  if(!analyser||!analyserData)return 0;
+  analyser.getByteTimeDomainData(analyserData);
+  let s=0;for(let i=0;i<analyserData.length;i++){const v=(analyserData[i]-128)/128;s+=v*v;}
+  return Math.sqrt(s/analyserData.length);
+}
+
+// ── TTS WebSocket ───────────────────────────────────────────────────────────
+function connectTTS(){
+  const url=$('ttsUrl').value.trim();if(!url)return;
+  setTTSUI('Connecting...','off');
+  $('connectBtn').disabled=$('disconnectBtn').disabled=true;
+  socket=window.io(url,{transports:['websocket']});
+  socket.on('connect',()=>{
+    ttsConnected=true;setTTSUI('Connected','on');
+    $('connectBtn').disabled=true;$('disconnectBtn').disabled=false;
+    $('speakBtn').disabled=false;$('ttsMsg').textContent='Ready.';
+  });
+  socket.on('disconnect',()=>{
+    ttsConnected=false;speaking=false;synthActive=false;setTTSUI('Disconnected','off');
+    $('connectBtn').disabled=false;$('disconnectBtn').disabled=true;
+    $('speakBtn').disabled=true;$('ampRow').style.display='none';
+    startIdleLoop();
+  });
+  socket.on('connect_error',err=>{
+    ttsConnected=false;setTTSUI('Failed: '+err.message,'off');
+    $('connectBtn').disabled=false;$('disconnectBtn').disabled=true;
+  });
+
+  // ── synthesis_start: TTS is generating — do NOT start animations yet ────────
+  // We wait for the first real audio_chunk so animation and audio are locked together.
+  socket.on('synthesis_start',()=>{
+    nextStart=0;speaking=true;_firstChunk=true;synthActive=true;
+    $('ampRow').style.display='flex';setChatState('speaking');
+  });
+
+  // ── audio_chunk: actual PCM data is arriving — NOW start animations ─────────
+  // Both loop and one-shot are activated here so animation begins the exact moment
+  // audio begins streaming. The 80ms LOOKAHEAD means audio plays ~80ms after
+  // scheduling, giving the animation just enough runway to get into motion.
+  socket.on('audio_chunk',d=>{
+    if(d.pcm)scheduleChunk(d.pcm);
+    if(_firstChunk){
+      _firstChunk=false;
+      if(_pendingLoop){_activateAction(_pendingLoop.action,_pendingLoop.name);_pendingLoop=null;}
+      if(_pendingShot){_activateAction(_pendingShot.action,_pendingShot.name);_pendingShot=null;}
+    }
+  });
+
+  socket.on('synthesis_done',()=>{$('ttsMsg').textContent='Done.';synthActive=false;});
+  socket.on('error',d=>{speaking=false;synthActive=false;$('ttsMsg').textContent='Error: '+d.message;startIdleLoop();});
+  socket.on('cancelled',()=>{speaking=false;synthActive=false;$('ampRow').style.display='none';startIdleLoop();});
+}
+function disconnectTTS(){
+  socket?.disconnect();socket=null;ttsConnected=false;speaking=false;synthActive=false;
+  setTTSUI('Disconnected','off');
+  $('connectBtn').disabled=false;$('disconnectBtn').disabled=$('speakBtn').disabled=true;
+  $('ampRow').style.display='none';
+  startIdleLoop();
+}
+function setTTSUI(msg,cls){$('ttsLabel').textContent=msg;$('ttsDot').className='dot '+cls;}
+function speak(){
+  const text=$('replyText').value.trim();if(!text||!socket?.connected)return;
+  synthActive=true;ensureAudio();socket.emit('synthesize',{text,voice:$('voiceSelect').value,speed:parseFloat($('spdInput').value)});
+  $('overlayText').textContent=text;
+}
+function stopSpeaking(){
+  socket?.emit('cancel');speaking=false;synthActive=false;_pendingLoop=_pendingShot=null;
+  if(audioCtx){audioCtx.suspend().then(()=>audioCtx.resume());nextStart=0;}
+  $('ampRow').style.display='none';mouthDrive=0;setChatState('');
+  setTimeout(startIdleLoop,300);
+}
+
+// ── Animation system ────────────────────────────────────────────────────────
+async function preloadAnimations(){
+  if(!vrm)return;
+  const btns=[...$('animGrid').querySelectorAll('.anim-btn')];
+  if(!btns.length)return;
+  $('animStatus').textContent=`Preloading 0/${btns.length}...`;
+  let done=0;
+  await Promise.allSettled(btns.map(async btn=>{
+    try{
+      const clip=await loadMixamoAnimation(btn.dataset.url,vrm);
+      clipCache.set(btn.dataset.name,clip);clipCache.set(btn.dataset.url,clip);
+      $('animStatus').textContent=`Preloading ${++done}/${btns.length}...`;
+    }catch(e){console.warn('Preload fail:',btn.dataset.name,e.message);}
+  }));
+  $('animStatus').textContent=`${done} animations ready`;
+  setTimeout(()=>{if($('animStatus').textContent.includes('ready'))$('animStatus').textContent='';},2500);
+  setTimeout(startIdleLoop,400);
+}
+
+function _activateAction(action,name){
+  if(!mixer)return;
+  autoIdle=false;idleCycleAt=Infinity;
+  if(activeAction&&activeAction!==action){action.reset();action.crossFadeFrom(activeAction,0.30,true);}
+  else action.reset();
+  action.play();activeAction=action;fbxPlaying=true;activeEmote=null;
+  highlightEmoteBtn(null);
+  $('animStatus').textContent='> '+name;$('stopAnimBtn').disabled=false;
+  $('nowPlayingName').textContent=name;$('nowPlaying').style.display='flex';
+  $('animGrid').querySelectorAll('.anim-btn').forEach(b=>b.classList.toggle('active',b.dataset.name===name));
+}
+
+function _prepareAction(name,loop){
+  if(!vrm||!mixer)return null;
+  const clip=clipCache.get(name);if(!clip)return null;
+  const action=mixer.clipAction(clip);
+  action.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,Infinity);
+  if(!loop)action.clampWhenFinished=true;
+  return action;
+}
+
+function playAnimation(url,name){
+  if(!vrm){$('animStatus').textContent='Load a VRM first.';return;}
+  const go=clip=>{
+    if(!mixer)mixer=new THREE.AnimationMixer(vrm.scene);
+    const action=mixer.clipAction(clip);
+    action.setLoop(loopAnimation?THREE.LoopRepeat:THREE.LoopOnce,Infinity);
+    if(!loopAnimation)action.clampWhenFinished=true;
+    _activateAction(action,name);
+    mixer.removeEventListener('finished',_onAnimDone);
+    if(!loopAnimation)mixer.addEventListener('finished',_onAnimDone);
+  };
+  if(clipCache.has(name)){go(clipCache.get(name));}
+  else{
+    $('animStatus').textContent='Loading '+name+'...';
+    loadMixamoAnimation(url,vrm).then(clip=>{clipCache.set(name,clip);clipCache.set(url,clip);go(clip);})
+    .catch(e=>{$('animStatus').textContent='Error: '+e.message;});
+  }
+}
+
+function _onAnimDone(){
+  fbxPlaying=false;autoIdle=false;activeEmote='idle';highlightEmoteBtn('idle');
+  $('animStatus').textContent='';$('stopAnimBtn').disabled=true;
+  $('nowPlaying').style.display='none';
+  $('animGrid').querySelectorAll('.anim-btn').forEach(b=>b.classList.remove('active'));
+  setTimeout(startIdleLoop,200);
+}
+
+function stopAnimation(){
+  _pendingLoop=_pendingShot=null;autoIdle=false;idleCycleAt=Infinity;
+  activeAction?.fadeOut(0.3);setTimeout(()=>{activeAction?.stop();activeAction=null;},350);
+  fbxPlaying=false;activeEmote='idle';highlightEmoteBtn('idle');
+  $('animStatus').textContent='';$('stopAnimBtn').disabled=true;
+  $('nowPlaying').style.display='none';
+  $('animGrid').querySelectorAll('.anim-btn').forEach(b=>b.classList.remove('active'));
+  setTimeout(startIdleLoop,400);
+}
+
+function toggleLoop(){
+  loopAnimation=!loopAnimation;
+  $('loopBtn').textContent='Loop: '+(loopAnimation?'On':'Off');
+  if(activeAction)activeAction.setLoop(loopAnimation?THREE.LoopRepeat:THREE.LoopOnce,Infinity);
+}
+
+// ── handlePreset: core sync coordinator ────────────────────────────────────
+// Flow:
+//   1. Response received from /api/chat
+//   2. emit('synthesize') → synthActive=true
+//   3. synthesis_start  → speaking=true  (no animation yet)
+//   4. audio_chunk[0]   → schedule PCM + activate BOTH pending animations NOW
+//   5. All PCM done     → speaking=false, synthActive=false → startIdleLoop()
+function handlePreset(preset){
+  if(preset.expression)setExpr(preset.expression,1.0);
+  if(!preset.animation&&preset.emote)setEmote(preset.emote);
+  _pendingLoop=_pendingShot=null;
+  if(preset.animation&&vrm){
+    if(!mixer)mixer=new THREE.AnimationMixer(vrm.scene);
+    const action=_prepareAction(preset.animation,preset.animation_loop);
+    if(action){
+      if(preset.animation_loop){_pendingLoop={action,name:preset.animation};if(preset.emote)setEmote(preset.emote);}
+      else _pendingShot={action,name:preset.animation};
+    } else {
+      // Not cached yet (fallback on-demand load)
+      const btn=[...$('animGrid').querySelectorAll('.anim-btn')].find(b=>b.dataset.name===preset.animation);
+      if(btn){
+        loadMixamoAnimation(btn.dataset.url,vrm).then(clip=>{
+          clipCache.set(btn.dataset.name,clip);clipCache.set(btn.dataset.url,clip);
+          const a=_prepareAction(preset.animation,preset.animation_loop);
+          if(a){if(preset.animation_loop)_pendingLoop={action:a,name:preset.animation};
+                else _pendingShot={action:a,name:preset.animation};}
+        });
+      }
+    }
+  }
+  if(preset.text&&socket?.connected){
+    synthActive=true;ensureAudio();
+    socket.emit('synthesize',{text:preset.text,voice:$('voiceSelect').value,speed:parseFloat($('spdInput').value)});
+    $('overlayText').textContent=preset.text;
+    // Animations are activated in audio_chunk[0] handler — not here.
+  } else {
+    // No TTS connected: activate animations immediately
+    if(_pendingLoop){_activateAction(_pendingLoop.action,_pendingLoop.name);_pendingLoop=null;}
+    if(_pendingShot){_activateAction(_pendingShot.action,_pendingShot.name);_pendingShot=null;}
+  }
+}
+
+// ── Chat ────────────────────────────────────────────────────────────────────
+async function sendChat(){
+  const msg=$('chatInput').value.trim();if(!msg)return;
+  $('chatInput').value='';$('sendBtn').disabled=true;
+  addMsg('user',msg);setChatState('thinking');
+  // Play thinking animation while waiting for API
+  if(vrm&&clipCache.has('Focus')){
+    if(!mixer)mixer=new THREE.AnimationMixer(vrm.scene);
+    const a=mixer.clipAction(clipCache.get('Focus'));
+    a.setLoop(THREE.LoopRepeat,Infinity);
+    if(activeAction&&activeAction!==a)a.reset().crossFadeFrom(activeAction,0.3,true);else a.reset();
+    a.play();activeAction=a;fbxPlaying=true;autoIdle=false;idleCycleAt=Infinity;activeEmote=null;highlightEmoteBtn(null);
+  }else setEmote('think');
+  try{
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg,history:chatHistory.slice(-12)})});
+    if(!res.ok)throw new Error('API '+res.status);
+    const preset=await res.json();
+    if(preset.error)throw new Error(preset.error);
+    addMsg('bot',preset.text);
+    handlePreset(preset);
+  }catch(e){
+    console.error(e);addMsg('sys','Error: '+e.message);setChatState('');
+    setEmote('idle');fbxPlaying=false;synthActive=false;startIdleLoop();
+  }finally{$('sendBtn').disabled=false;}
+}
+
+// ── Speech Recognition ──────────────────────────────────────────────────────
+let recognition=null,micActive=false;
+function initSTT(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){addMsg('sys','Speech recognition not supported.');return false;}
+  recognition=new SR();recognition.continuous=false;recognition.interimResults=true;recognition.lang='en-US';
+  recognition.onstart=()=>{micActive=true;$('micBtn').classList.add('mic-on');setChatState('listening');};
+  recognition.onend=()=>{micActive=false;$('micBtn').classList.remove('mic-on');if(!$('chatInput').value.trim())setChatState('');};
+  recognition.onerror=e=>{micActive=false;$('micBtn').classList.remove('mic-on');addMsg('sys','Mic error: '+e.error);};
+  recognition.onresult=e=>{
+    const last=e.results[e.results.length-1];
+    $('chatInput').value=last[0].transcript;
+    if(last.isFinal){recognition.stop();setTimeout(sendChat,80);}
+  };
+  return true;
+}
+function toggleMic(){if(!recognition&&!initSTT())return;if(micActive)recognition.stop();else{$('chatInput').value='';recognition.start();}}
+
+// ── VRM helpers ─────────────────────────────────────────────────────────────
+const getBone=name=>vrm?.humanoid?.getNormalizedBoneNode(name)??null;
+function setExpr(name,val){
+  const m=vrm?.expressionManager;if(!m)return;
+  try{m.setValue(name,val);}catch(_){try{m.setExpression(name,val);}catch(_){}}
+}
+function getExpr(name){const m=vrm?.expressionManager;if(!m)return 0;try{return m.getValue(name)??0;}catch(_){return 0;}}
+function resetFace(){
+  ['aa','ih','ou','ee','oh','blinkLeft','blinkRight','happy','angry','sad','relaxed','surprised'].forEach(n=>setExpr(n,0));
+  mouthDrive=0;blinkV=0;blinkH=0;
+  $('mouthOpen').value=$('smile').value=$('blink').value=$('surprise').value='0';
+}
+
+// ── Lip sync ─────────────────────────────────────────────────────────────────
+// AnalyserNode RMS → mouthDrive every frame. Zero lag because we read the
+// actual audio waveform that is currently playing through the speakers.
+function updateLipSync(){
+  let target=0;
+  if(speaking&&ttsConnected){
+    const rms=audioRMS();target=THREE.MathUtils.clamp(rms*5.5,0,1);
+    const p=Math.min(99,Math.round(rms*500));
+    $('ampFill').style.width=p+'%';$('ampLbl').textContent=p+'%';
+  }else if(speaking){
+    target=THREE.MathUtils.clamp(.1+.45*(.5+.5*Math.sin((clock.elapsedTime+mouthSeed)*13)),0,1);
+  }else{$('ampFill').style.width='0%';$('ampLbl').textContent='0%';}
+  mouthDrive=THREE.MathUtils.lerp(mouthDrive,target,.35);
+  setExpr('aa',mouthDrive*.9);setExpr('ih',mouthDrive*.22);
+  setExpr('ou',mouthDrive*.15);setExpr('ee',mouthDrive*.07);
+}
+function updateBlink(dt){
+  if(!autoBlink)return;blinkH+=dt;const b=Math.sin(blinkH*1.8)>.995?1:0;
+  blinkV=THREE.MathUtils.lerp(blinkV,b,.22);setExpr('blinkLeft',blinkV);setExpr('blinkRight',blinkV);
+}
+
+// ── Procedural poses (normalised bones) ────────────────────────────────────
+// In normalised T-pose: left arm → +X, right arm → -X.
+// Arms-down: lUpperArm.z = -1.22, rUpperArm.z = +1.22
+function naturalArms(){
+  const lU=getBone('leftUpperArm'),rU=getBone('rightUpperArm');
+  const lL=getBone('leftLowerArm'),rL=getBone('rightLowerArm');
+  const lH=getBone('leftHand'),rH=getBone('rightHand');
+  if(lU){lU.rotation.x=.06;lU.rotation.y=0;lU.rotation.z=-1.22;}
+  if(rU){rU.rotation.x=.06;rU.rotation.y=0;rU.rotation.z= 1.22;}
+  if(lL){lL.rotation.x=.08;lL.rotation.y=0;lL.rotation.z=0;}
+  if(rL){rL.rotation.x=.08;rL.rotation.y=0;rL.rotation.z=0;}
+  if(lH)lH.rotation.set(0,0,0);if(rH)rH.rotation.set(0,0,0);
+}
+function baseIdle(t){
+  const sp=getBone('spine'),ch=getBone('chest'),uc=getBone('upperChest'),nk=getBone('neck'),hd=getBone('head');
+  const sw=Math.sin(t*.9)*.032,bob=Math.sin(t*1.1)*.013,br=Math.sin(t*1.25)*.016;
+  if(sp){sp.rotation.z=sw*.22;sp.position.y=br*.4;}if(ch)ch.rotation.z=sw*.30;
+  if(uc)uc.rotation.y=sw*.45;if(nk)nk.rotation.y=Math.sin(t*.7)*.04;
+  if(hd){hd.rotation.y=Math.sin(t*.6)*.04;hd.rotation.x=bob;}
+}
+function emoteWave(t){
+  naturalArms();const u=getBone('rightUpperArm'),l=getBone('rightLowerArm'),h=getBone('rightHand');
+  const s=Math.sin(t*10)*.7;
+  if(u){u.rotation.z=.18;u.rotation.x=-.18;u.rotation.y=.45;}
+  if(l){l.rotation.z=-.35+s*.22;l.rotation.x=-.12;}if(h)h.rotation.z=.18+s*.4;
+}
+function emoteNod(t){
+  naturalArms();const h=getBone('head'),n=getBone('neck'),nd=Math.sin(t*5.5)*.16+.06;
+  if(h){h.rotation.x=nd;h.rotation.y=Math.sin(t*.6)*.03;}if(n)n.rotation.x=nd*.45;
+}
+function emoteDance(t){
+  const b=Math.sin(t*3.2),b2=Math.cos(t*3.2),b4=Math.sin(t*6.4);
+  const hp=getBone('hips'),sp=getBone('spine'),ch=getBone('chest');
+  const lU=getBone('leftUpperArm'),rU=getBone('rightUpperArm');
+  const lL=getBone('leftLowerArm'),rL=getBone('rightLowerArm'),nk=getBone('neck'),hd=getBone('head');
+  if(hp){hp.rotation.y=b*.22;hp.rotation.z=b*.09;}
+  if(sp){sp.rotation.z=-b*.14;sp.rotation.y=b2*.08;sp.position.y=Math.abs(b4)*.05;}
+  if(ch)ch.rotation.z=b*.10;if(nk)nk.rotation.y=b2*.07;
+  if(hd){hd.rotation.y=b*.06;hd.rotation.z=b2*.04;}
+  if(lU){lU.rotation.z=-(0.85+b2*.38);lU.rotation.x=b*.18;}
+  if(rU){rU.rotation.z=(0.85+b*.38);rU.rotation.x=b2*.18;}
+  if(lL)lL.rotation.x=.28+b*.22;if(rL)rL.rotation.x=.28+b2*.22;
+}
+function emoteThink(t){
+  const slow=Math.sin(t*.6)*.04;
+  const lU=getBone('leftUpperArm'),lL=getBone('leftLowerArm'),lH=getBone('leftHand');
+  const rU=getBone('rightUpperArm'),rL=getBone('rightLowerArm'),hd=getBone('head'),nk=getBone('neck');
+  if(lU){lU.rotation.z=-.55;lU.rotation.x=.35;lU.rotation.y=-.25;}if(lL)lL.rotation.x=1.15;if(lH)lH.rotation.x=.25;
+  if(rU){rU.rotation.z=.55;rU.rotation.x=.45;rU.rotation.y=.35;}if(rL)rL.rotation.x=1.35;
+  if(hd){hd.rotation.z=.1+slow;hd.rotation.y=slow*1.2;}if(nk)nk.rotation.x=.04;
+}
+function emoteBounce(t){
+  const b=Math.abs(Math.sin(t*4.2)),b2=Math.sin(t*4.2);
+  const sp=getBone('spine'),hp=getBone('hips'),lU=getBone('leftUpperArm'),rU=getBone('rightUpperArm'),hd=getBone('head');
+  if(hp)hp.position.y=b*.06;if(sp){sp.rotation.z=b2*.04;sp.position.y=b*.04;}if(hd)hd.rotation.x=-b*.04;
+  if(lU){lU.rotation.z=-1.15+b2*.18;lU.rotation.x=-b*.08;}if(rU){rU.rotation.z=1.15-b2*.18;rU.rotation.x=-b*.08;}
+}
+function emoteShrug(t){
+  const e=.5+.5*Math.sin(t*1.8);
+  const lU=getBone('leftUpperArm'),rU=getBone('rightUpperArm'),lL=getBone('leftLowerArm'),rL=getBone('rightLowerArm');
+  const lS=getBone('leftShoulder'),rS=getBone('rightShoulder'),nk=getBone('neck'),hd=getBone('head');
+  if(lS)lS.rotation.z=-e*.3;if(rS)rS.rotation.z=e*.3;
+  if(lU){lU.rotation.z=-(0.7+e*.3);lU.rotation.x=.4;}if(rU){rU.rotation.z=(0.7+e*.3);rU.rotation.x=.4;}
+  if(lL)lL.rotation.x=.9;if(rL)rL.rotation.x=.9;
+  if(nk)nk.rotation.x=e*.06;if(hd)hd.rotation.z=Math.sin(t*.7)*.06;
+}
+function emotePoint(t){
+  naturalArms();const p=Math.sin(t*2.5)*.04;
+  const rU=getBone('rightUpperArm'),rL=getBone('rightLowerArm'),rH=getBone('rightHand'),hd=getBone('head');
+  if(rU){rU.rotation.z=.35;rU.rotation.x=.5-p;rU.rotation.y=.2;}if(rL)rL.rotation.x=.15;
+  if(rH){rH.rotation.x=-.15+p;rH.rotation.y=.1;}if(hd){hd.rotation.y=.1-p;hd.rotation.x=-.05;}
+}
+const emoteMap={idle:naturalArms,wave:emoteWave,nod:emoteNod,dance:emoteDance,
+  think:emoteThink,bounce:emoteBounce,shrug:emoteShrug,point:emotePoint};
+function applyEmote(t){(emoteMap[activeEmote]??naturalArms)(t);}
+
+// ── Auto-idle system ─────────────────────────────────────────────────────────
+// Patterns used to recognise idle/standing FBX animations in the cache.
+const IDLE_PATTERNS=[/idle/i,/standing.*idle/i,/stand.*neutral/i,/breathing/i,/waiting/i];
+
+function getIdleAnimNames(){
+  // Return animation names (not URL keys) that look like idle animations.
+  return [...clipCache.keys()]
+    .filter(k=>typeof k==='string'&&!k.startsWith('http')&&!k.startsWith('/')&&!k.includes('\\'))
+    .filter(n=>IDLE_PATTERNS.some(p=>p.test(n)));
+}
+
+// startIdleLoop: soft-start a looping idle FBX. Safe to call repeatedly.
+// Falls back to the procedural naturalArms+baseIdle path if no FBX idle exists.
+function startIdleLoop(){
+  if(!vrm)return;
+  if(speaking||synthActive)return;          // TTS active — don't interrupt
+  if(fbxPlaying&&!autoIdle)return;          // real user-triggered animation running
+  idleCycleAt=Infinity;                     // reset cycle timer before we pick a new one
+
+  const names=getIdleAnimNames();
+  if(!names.length){
+    // No FBX idle available — switch back to procedural path
+    if(autoIdle){autoIdle=false;fbxPlaying=false;}
+    return;
+  }
+  if(!mixer)mixer=new THREE.AnimationMixer(vrm.scene);
+  // Pick randomly for variety across cycles
+  const name=names[Math.floor(Math.random()*names.length)];
+  const clip=clipCache.get(name);if(!clip)return;
+  const action=mixer.clipAction(clip);
+  action.setLoop(THREE.LoopRepeat,Infinity);action.timeScale=1;
+  if(activeAction&&activeAction!==action){action.reset();action.crossFadeFrom(activeAction,0.7,true);}
+  else action.reset();
+  action.play();
+  activeAction=action;fbxPlaying=true;autoIdle=true;activeEmote=null;
+  highlightEmoteBtn(null);
+  // No "nowPlaying" UI update for background idle — keeps UI clean
+  idleCycleAt=clock.elapsedTime+(18+Math.random()*12); // cycle to another idle in 18-30s
+}
+function setEmote(id){
+  activeEmote=id;autoIdle=false;idleCycleAt=Infinity;
+  if(id!==null&&fbxPlaying){
+    activeAction?.fadeOut(.3);setTimeout(()=>{activeAction?.stop();},350);
+    fbxPlaying=false;$('animGrid').querySelectorAll('.anim-btn').forEach(b=>b.classList.remove('active'));
+    $('nowPlaying').style.display='none';$('animStatus').textContent='';
+  }
+  highlightEmoteBtn(id);
+  $('emoteHint').textContent=EMOTES.find(e=>e.id===id)?.hint??'';
+}
+function highlightEmoteBtn(id){
+  $('emoteGrid').querySelectorAll('.emote-btn').forEach(b=>b.classList.toggle('active',b.dataset.emote===id));
+}
+
+// ── Character position helpers ───────────────────────────────────────────────
+function _setCharPos(x,y,z,fromAutoDetect){
+  charPos.x=parseFloat(x.toFixed(3));charPos.y=parseFloat(y.toFixed(3));charPos.z=parseFloat(z.toFixed(3));
+  $('charX').value=charPos.x;$('charY').value=charPos.y;$('charZ').value=charPos.z;
+  $('charXVal').textContent=charPos.x.toFixed(2);
+  $('charYVal').textContent=charPos.y.toFixed(2);
+  $('charZVal').textContent=charPos.z.toFixed(2);
+  if(fromAutoDetect)$('soafStatus').textContent='✓ sofa detected';
+  applyCharPos();
+}
+function applyCharPos(){
+  if(!vrm)return;
+  vrm.scene.position.set(charPos.x,charPos.y,charPos.z);
+  controls.target.set(charPos.x,charPos.y+1.35,charPos.z);
+  controls.update();
+}
+function updateCharPos(){
+  charPos.x=parseFloat($('charX').value);
+  charPos.y=parseFloat($('charY').value);
+  charPos.z=parseFloat($('charZ').value);
+  $('charXVal').textContent=charPos.x.toFixed(2);
+  $('charYVal').textContent=charPos.y.toFixed(2);
+  $('charZVal').textContent=charPos.z.toFixed(2);
+  applyCharPos();
+}
+function resetCharPos(){
+  _setCharPos(1.35,1.76,1.00,false);
+  $('soafStatus').textContent='';
+  setCamHome();
+}
+
+// ── VRM loading ─────────────────────────────────────────────────────────────
+const gltfLoader=new GLTFLoader();gltfLoader.register(p=>new VRMLoaderPlugin(p));
+function onVRMLoaded(v,name){
+  if(vrm?.scene){scene.remove(vrm.scene);disposeVRM(vrm.scene);}
+  vrm=v;mixer=null;activeAction=null;fbxPlaying=false;autoIdle=false;idleCycleAt=Infinity;
+  VRMUtils.removeUnnecessaryVertices(vrm.scene);
+  VRMUtils.combineSkeletons?.(vrm.scene);
+  vrm.scene.rotation.y=Math.PI;scene.add(vrm.scene);
+  // Place at the currently stored sofa/manual position
+  vrm.scene.position.set(charPos.x,0,charPos.z);
+  // Cast shadow onto the loft floor
+  vrm.scene.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+  resetFace();setCamHome();clipCache.clear();
+  $('vrmStatus').innerHTML=`Loaded <strong>${name}</strong>`;
+  $('overlayText').textContent=name+' ready.';
+  preloadAnimations();
+}
+function loadVRMBlob(file){
+  if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(file);
+  $('vrmStatus').innerHTML=`Loading <strong>${file.name}</strong>...`;
+  gltfLoader.load(blobUrl,g=>{const v=g.userData.vrm;v?onVRMLoaded(v,file.name):($('vrmStatus').innerHTML='No VRM found.');},
+    p=>{$('vrmStatus').innerHTML=`Loading ${p.total?Math.round(p.loaded/p.total*100):'?'}%`;},
+    e=>{console.error(e);$('vrmStatus').innerHTML='Failed.';});
+}
+function loadVRMURL(url,name){
+  $('vrmStatus').innerHTML=`Loading <strong>${name}</strong>...`;
+  gltfLoader.load(url,g=>{const v=g.userData.vrm;v?onVRMLoaded(v,name):($('vrmStatus').innerHTML='No VRM found.');},
+    p=>{$('vrmStatus').innerHTML=`Loading ${p.total?Math.round(p.loaded/p.total*100):'?'}%`;},
+    e=>{console.error(e);$('vrmStatus').innerHTML='Failed.';});
+}
+function disposeVRM(root){root.traverse(o=>{o.geometry?.dispose?.();[o.material].flat().forEach(m=>{if(!m)return;Object.values(m).forEach(v=>v?.isTexture&&v.dispose?.());m.dispose?.();});});}
+
+// ── Server assets ────────────────────────────────────────────────────────────
+function animEmoji(n){
+  n=n.toLowerCase();
+  if(/danc|rumba/.test(n))return'D';if(/hip.hop|snake/.test(n))return'S';
+  if(/idle/.test(n))return'I';if(/angry/.test(n))return'!';
+  if(/pray/.test(n))return'P';if(/reject/.test(n))return'R';
+  if(/plot/.test(n))return'?';if(/focus/.test(n))return'F';
+  if(/crazy/.test(n))return'*';if(/pose|stand/.test(n))return'|';
+  if(/orc/.test(n))return'O';if(/dwarf/.test(n))return'W';return'>';
+}
+async function fetchServerAssets(){
+  try{
+    const r=await fetch('/api/animations');if(!r.ok)return;
+    const list=await r.json();
+    $('animCountLbl').textContent=list.length?`(${list.length})`:'';
+    $('animGrid').innerHTML='';
+    for(const a of list){
+      const name=a.name.replace(/\.fbx$/i,'');
+      const btn=document.createElement('button');
+      btn.className='anim-btn';btn.dataset.url=a.url;btn.dataset.name=name;
+      btn.textContent=name;btn.onclick=()=>playAnimation(a.url,name);
+      $('animGrid').appendChild(btn);
+    }
+  }catch(_){}
+  try{
+    const r=await fetch('/api/models');if(!r.ok)return;
+    const list=await r.json();if(!list.length)return;
+    $('serverModels').style.display='block';$('serverModelBtns').innerHTML='';
+    for(const m of list){
+      const btn=document.createElement('button');btn.className='sec';btn.style.fontSize='11px';
+      btn.textContent=m.name.replace(/\.vrm$/i,'').slice(0,18);
+      btn.onclick=()=>loadVRMURL(m.url,m.name);$('serverModelBtns').appendChild(btn);
+    }
+  }catch(_){}
+}
+
+// ── Render loop ──────────────────────────────────────────────────────────────
+function update(){
+  requestAnimationFrame(update);
+  const dt=clock.getDelta(),t=clock.elapsedTime;
+  controls.update();
+  if(vrm){
+    // Always update mixer so crossfades and active clips advance
+    if(mixer)mixer.update(dt);
+    if(fbxPlaying){
+      // FBX / auto-idle is driving bones.
+      // Cycle idle animation periodically for variety.
+      if(autoIdle&&t>idleCycleAt)startIdleLoop();
+    }else{
+      // No FBX → run procedural breathing idle + active emote
+      baseIdle(t);applyEmote(t);
+    }
+    updateLipSync();updateBlink(dt);
+    vrm.update(dt); // spring bones last
+  }
+  renderer.render(scene,camera);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+function setCamHome(){
+  camera.position.set(charPos.x, charPos.y+1.45, charPos.z+3);
+  controls.target.set(charPos.x, charPos.y+1.35, charPos.z);
+  controls.update();
+}
+function resize(){
+  const w=$('canvasWrap').clientWidth,h=$('canvasWrap').clientHeight;
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);
+}
+window.addEventListener('resize',resize);resize();
+
+for(const e of EMOTES){
+  const b=document.createElement('button');
+  b.className='emote-btn'+(e.id==='idle'?' active':'');
+  b.dataset.emote=e.id;b.textContent=e.label;b.onclick=()=>setEmote(e.id);
+  $('emoteGrid').appendChild(b);
+}
+$('emoteHint').textContent=EMOTES[0].hint;
+
+fetchServerAssets();setCamHome();update();
+$('vrmFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)loadVRMBlob(f);});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{
+  e.preventDefault();const f=e.dataTransfer?.files?.[0];
+  if(f?.name.toLowerCase().endsWith('.vrm'))loadVRMBlob(f);
+});
+[$('mouthOpen'),$('smile'),$('blink'),$('surprise')].forEach(s=>s.addEventListener('input',()=>{
+  setExpr('aa',+$('mouthOpen').value);setExpr('happy',+$('smile').value);
+  setExpr('blinkLeft',+$('blink').value);setExpr('blinkRight',+$('blink').value);
+  setExpr('surprised',+$('surprise').value);
+}));
+$('resetFaceBtn').addEventListener('click',resetFace);
+$('blinkBtn').addEventListener('click',()=>{
+  autoBlink=!autoBlink;$('blinkBtn').textContent='Blink: '+(autoBlink?'Auto':'Off');
+});
+$('camBtn').addEventListener('click',setCamHome);
+
+// Expose to window for inline onclick handlers (module scope is not global)
+window.connectTTS=connectTTS;window.disconnectTTS=disconnectTTS;
+window.speak=speak;window.stopSpeaking=stopSpeaking;
+window.stopAnimation=stopAnimation;window.toggleLoop=toggleLoop;
+window.sendChat=sendChat;window.toggleMic=toggleMic;
+window.updateCharPos=updateCharPos;window.resetCharPos=resetCharPos;
+</script>
+</body>
+</html>

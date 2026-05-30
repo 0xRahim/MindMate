@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kokoro Realtime TTS Test</title>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f3f4f6;
+      margin: 0;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+    }
+
+    h1 {
+      margin-bottom: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 180px;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      resize: vertical;
+      font-size: 16px;
+      box-sizing: border-box;
+      background: #1f2937;
+      color: white;
+    }
+
+    .controls {
+      margin-top: 16px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    select,
+    input[type="range"],
+    button {
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      font-size: 15px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .start {
+      background: #10b981;
+      color: white;
+    }
+
+    .stop {
+      background: #ef4444;
+      color: white;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #1f2937;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+
+    .metrics {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #1f2937;
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    .metric .label {
+      font-size: 12px;
+      opacity: 0.7;
+    }
+
+    .metric .value {
+      font-size: 22px;
+      margin-top: 6px;
+      font-weight: bold;
+    }
+
+    .connected {
+      color: #10b981;
+    }
+
+    .disconnected {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Kokoro Realtime Audio Streaming Test</h1>
+
+  <div id="connectionStatus" class="disconnected">
+    ● Disconnected
+  </div>
+
+  <br/>
+
+  <textarea id="textInput">
+Hello! This is a realtime streaming text to speech test using Kokoro TTS over WebSockets.
+Audio chunks are streamed progressively from the server and played immediately in the browser.
+  </textarea>
+
+  <div class="controls">
+    <select id="voiceSelect"></select>
+
+    <label>
+      Speed:
+      <input id="speedInput" type="range" min="0.5" max="2" step="0.1" value="1">
+      <span id="speedValue">1.0</span>
+    </label>
+
+    <button class="start" id="startBtn">
+      Start Streaming
+    </button>
+
+    <button class="stop" id="stopBtn">
+      Stop
+    </button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="label">First Audio Latency</div>
+      <div class="value" id="latencyValue">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Chunks Received</div>
+      <div class="value" id="chunksValue">0</div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Samples Received</div>
+      <div class="value" id="samplesValue">0</div>
+    </div>
+
+    <div class="metric">
+      <div class="label">Playback Queue</div>
+      <div class="value" id="queueValue">0</div>
+    </div>
+  </div>
+
+  <div class="status" id="log"></div>
+</div>
+
+<script>
+  // =========================================================
+  // CONFIG
+  // =========================================================
+  const SERVER_URL = "http://10.19.102.206:5000";
+
+  // =========================================================
+  // DOM
+  // =========================================================
+  const logEl = document.getElementById("log");
+  const voiceSelect = document.getElementById("voiceSelect");
+  const speedInput = document.getElementById("speedInput");
+  const speedValue = document.getElementById("speedValue");
+
+  const latencyValue = document.getElementById("latencyValue");
+  const chunksValue = document.getElementById("chunksValue");
+  const samplesValue = document.getElementById("samplesValue");
+  const queueValue = document.getElementById("queueValue");
+
+  const connectionStatus = document.getElementById("connectionStatus");
+
+  speedInput.addEventListener("input", () => {
+    speedValue.textContent = speedInput.value;
+  });
+
+  // =========================================================
+  // LOGGING
+  // =========================================================
+  function log(message) {
+    console.log(message);
+    logEl.textContent += message + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // =========================================================
+  // SOCKET
+  // =========================================================
+  const socket = io(SERVER_URL, {
+    transports: ["websocket"]
+  });
+
+  socket.on("connect", () => {
+    connectionStatus.textContent = "● Connected";
+    connectionStatus.className = "connected";
+    log("Connected to server");
+  });
+
+  socket.on("disconnect", () => {
+    connectionStatus.textContent = "● Disconnected";
+    connectionStatus.className = "disconnected";
+    log("Disconnected");
+  });
+
+  // =========================================================
+  // AUDIO
+  // =========================================================
+  let audioCtx = null;
+  let nextPlayTime = 0;
+  let sampleRate = 24000;
+
+  let synthesisStartTime = 0;
+  let firstChunkReceived = false;
+
+  let totalChunks = 0;
+  let totalSamples = 0;
+
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      audioCtx = new AudioContext();
+    }
+
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+
+  function pcm16ToFloat32(buffer) {
+    const int16 = new Int16Array(buffer);
+    const float32 = new Float32Array(int16.length);
+
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
+
+    return float32;
+  }
+
+  function playPCMChunk(arrayBuffer) {
+    ensureAudioContext();
+
+    const floatData = pcm16ToFloat32(arrayBuffer);
+
+    const audioBuffer = audioCtx.createBuffer(
+      1,
+      floatData.length,
+      sampleRate
+    );
+
+    audioBuffer.copyToChannel(floatData, 0);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+
+    if (nextPlayTime < now) {
+      nextPlayTime = now + 0.02;
+    }
+
+    source.start(nextPlayTime);
+
+    nextPlayTime += audioBuffer.duration;
+
+    queueValue.textContent =
+      (nextPlayTime - now).toFixed(2) + "s";
+  }
+
+  // =========================================================
+  // SOCKET EVENTS
+  // =========================================================
+  socket.on("connected", (data) => {
+    log("Server says connected");
+    log("Encoding: " + data.encoding);
+
+    sampleRate = data.sample_rate || 24000;
+
+    voiceSelect.innerHTML = "";
+
+    Object.entries(data.voices).forEach(([key, label]) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = `${key} - ${label}`;
+      voiceSelect.appendChild(opt);
+    });
+  });
+
+  socket.on("synthesis_start", (data) => {
+    log("Synthesis started");
+    sampleRate = data.sample_rate;
+
+    synthesisStartTime = performance.now();
+    firstChunkReceived = false;
+
+    totalChunks = 0;
+    totalSamples = 0;
+
+    chunksValue.textContent = "0";
+    samplesValue.textContent = "0";
+    latencyValue.textContent = "-";
+
+    nextPlayTime = 0;
+  });
+
+  socket.on("audio_chunk", (data) => {
+    if (!firstChunkReceived) {
+      firstChunkReceived = true;
+
+      const latency =
+        performance.now() - synthesisStartTime;
+
+      latencyValue.textContent =
+        latency.toFixed(1) + " ms";
+
+      log("First audio chunk latency: " + latency.toFixed(1) + " ms");
+    }
+
+    totalChunks++;
+    totalSamples += data.samples;
+
+    chunksValue.textContent = totalChunks;
+    samplesValue.textContent = totalSamples;
+
+    log(
+      `Chunk ${data.index} | samples=${data.samples} | text="${data.graphemes}"`
+    );
+
+    playPCMChunk(data.pcm);
+  });
+
+  socket.on("synthesis_done", (data) => {
+    log("Synthesis complete");
+    log(JSON.stringify(data, null, 2));
+  });
+
+  socket.on("cancelled", (data) => {
+    log("Cancelled");
+  });
+
+  socket.on("error", (err) => {
+    console.error(err);
+    log("ERROR: " + JSON.stringify(err));
+  });
+
+  // =========================================================
+  // BUTTONS
+  // =========================================================
+  document.getElementById("startBtn").addEventListener("click", async () => {
+    ensureAudioContext();
+
+    log("=================================");
+    log("Sending synthesis request");
+
+    socket.emit("synthesize", {
+      text: document.getElementById("textInput").value,
+      voice: voiceSelect.value,
+      speed: parseFloat(speedInput.value)
+    });
+  });
+
+  document.getElementById("stopBtn").addEventListener("click", () => {
+    socket.emit("cancel");
+
+    if (audioCtx) {
+      nextPlayTime = audioCtx.currentTime;
+    }
+  });
+</script>
+</body>
+</html>
