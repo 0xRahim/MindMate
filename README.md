@@ -1,4 +1,4 @@
-# AI-Powered Virtual Assistant (VA Harness)
+# MindMate : AI-Powered Virtual Assistant 
 
 An early version of an agentic virtual assistant framework designed to combine conversational AI with a customizable knowledge base and task automation.
 
