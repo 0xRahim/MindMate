@@ -2,7 +2,6 @@
 
 An early version of an agentic virtual assistant framework designed to combine conversational AI with a customizable knowledge base and task automation.
 
-This project focuses on building the foundation first: a lightweight virtual assistant that can answer questions from a user-defined knowledge base and provide a framework for automating custom workflows. The current implementation uses a hardcoded knowledge base, with planned support for direct integration with Obsidian vaults and extensible automation through a dedicated SDK.
 
 ---
 ![Alt Text](https://raw.githubusercontent.com/0xRahim/MindMate/refs/heads/main/main/animations/cropped.gif)
