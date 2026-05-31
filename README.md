@@ -115,5 +115,4 @@ The long-term vision is to provide a customizable AI operating layer where users
 
 This project is intentionally minimal in its current state. The objective of the first release is to establish a stable foundation for knowledge-driven assistants and future agent automation capabilities rather than delivering a complete production-ready platform.
 
----
-cense.
+
