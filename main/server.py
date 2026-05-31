@@ -1,9 +1,3 @@
-"""
-VRM Live — Asset server + Chat API (Gemini Edition)
-pip install flask google-generativeai
-export GEMINI_API_KEY=AIzaSy...
-python gemini-server.py [--port 8080]
-"""
 import os, json, logging
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory
