@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-stage: #0a0618;
+  --color-accent: #22d3ee;
+  --color-accent2: #ff6ec7;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --mascot-x: 0; /* -1 left … 1 right, set from scroll */
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -5%, rgba(255,110,199,0.16), transparent 60%),
+    radial-gradient(1000px 700px at 85% 10%, rgba(34,211,238,0.16), transparent 60%),
+    radial-gradient(800px 500px at 50% 110%, rgba(124,58,237,0.22), transparent 60%),
+    #0a0618;
+  color: #f4f2ff;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* cards tilt away from mascot — the cause & effect */
+.tilt-card {
+  transform:
+    perspective(900px)
+    rotateY(calc(var(--mascot-x) * -10deg))
+    translateX(calc(var(--mascot-x) * -14px));
+  transition: transform 0.35s ease-out;
+}
+/* interactive tilt-cards: tilt + mascot shove compose in one transform */
+.tilt-card[data-interactive] {
+  transform:
+    perspective(900px)
+    rotateY(calc(var(--mascot-x) * -10deg))
+    translate(var(--push-x, 0px), var(--push-y, 0px))
+    translateX(calc(var(--mascot-x) * -14px));
+}
+
+/* ── mascot ↔ UI interaction layer ── */
+[data-interactive] {
+  --push-x: 0px;
+  --push-y: 0px;
+  --prox: 0;
+  transform: translate(var(--push-x), var(--push-y));
+  transition:
+    transform 0.28s ease-out,
+    opacity 0.5s ease,
+    filter 0.5s ease,
+    scale 0.5s ease,
+    box-shadow 0.3s ease;
+  will-change: transform;
+}
+.scatter-char {
+  transition-duration: 0.18s;
+}
+/* proximity glow — widgets light up as she nears */
+[data-interactive="card"],
+[data-interactive="row"] {
+  box-shadow: 0 0 calc(var(--prox) * 42px) rgba(34, 211, 238, calc(var(--prox) * 0.5));
+}
+/* ghost-back: widget recedes BEHIND her (opacity/blur/shrink while she grows) */
+[data-ghost="true"] [data-interactive] {
+  opacity: 0.22;
+  filter: blur(3px) saturate(0.7);
+  scale: 0.93;
+}
+/* touch bounce */
+.touched {
+  animation: touch-bounce 0.8s ease;
+}
+@keyframes touch-bounce {
+  0% { scale: 1; }
+  30% { scale: 1.1; }
+  60% { scale: 0.96; }
+  100% { scale: 1; }
+}
+
+.shake {
+  animation: shake 0.5s ease-in-out;
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-7px) rotate(-0.4deg); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px) rotate(0.4deg); }
+  80% { transform: translateX(3px); }
+}
+
+.bubble-pop { animation: pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes pop {
+  0% { transform: scale(0.6) translateY(8px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.float-slow { animation: floaty 5s ease-in-out infinite; }
+@keyframes floaty {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.glow-text {
+  background: linear-gradient(90deg, #ff6ec7, #c4b5fd, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.nice-scroll::-webkit-scrollbar { width: 5px; }
+.nice-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+@keyframes pulse-dot {
+  0%,100% { box-shadow: 0 0 0 3px rgba(34,211,238,0.15); }
+  50% { box-shadow: 0 0 0 7px rgba(34,211,238,0.3); }
+}
+.live-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+section { scroll-margin-top: 20px; }

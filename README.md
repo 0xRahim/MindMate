@@ -71,22 +71,34 @@ The current focus is validating the core architecture and interaction model befo
 ## Architecture
 
 ```text
-User
+Browser
+  ├── Next.js frontend/ (:8080, bun)
+  │      ├── 3D stage (three.js + three-vrm, Mixamo retarget)
+  │      ├── A/V sync state machine (expression + animation commit on first audio)
+  │      ├── /api/chat  (Gemini 2.5 Flash JSON mode + keyword fallback)
+  │      └── /models|/animations|/background  (serve 3D assets from main/)
   │
-  ▼
-Virtual Assistant
+  ├── Kokoro TTS audio-model/ (:5000, Socket.IO PCM stream)
   │
-  ├── Knowledge Base Layer
-  │      └── Hardcoded Data
-  │
-  ├── Agent Core
-  │      └── Reasoning & Response Generation
-  │
-  └── Task Harness
-         └── Custom Actions
+  └── main/{models,animations,background}/  (3D assets, bind-mounted read-only)
 ```
 
 Future versions will replace the hardcoded knowledge layer with an Obsidian-backed knowledge system and expand the task harness into a full SDK-driven automation platform.
+
+## Running
+
+```bash
+# Dev (frontend only, TTS optional at :5000)
+cd frontend && bun install && bun run dev     # http://localhost:3000
+
+# Full stack (Podman)
+./mindmate.sh start --build   # frontend :8080 + TTS :5000
+./mindmate.sh logs -f         # follow logs
+./mindmate.sh stop            # stop, keep images
+```
+
+Config via `.env` (see `.env.example`): `GEMINI_API_KEY`, `FRONTEND_PORT`, `TTS_PORT`.
+Without `GEMINI_API_KEY` the chat API uses its keyword fallback.
 
 ---
 

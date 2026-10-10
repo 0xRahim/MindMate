@@ -5,4 +5,7 @@ numpy>=1.26.0
 eventlet>=0.35.0
 soundfile>=0.12.1
 python-socketio[client]>=5.11.0
-torch==2.11.0
+# NOTE: torch is installed separately in the Dockerfile from the CPU-only
+# index (https://download.pytorch.org/whl/cpu). Do NOT pin torch here,
+# otherwise pip would reinstall the default (CUDA) wheel and override it.
+# kokoro's torch dependency is satisfied by the pre-installed CPU build.

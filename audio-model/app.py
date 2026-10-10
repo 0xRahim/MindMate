@@ -221,4 +221,7 @@ if __name__ == "__main__":
     threading.Thread(target=get_pipeline, daemon=True).start()
 
     log.info("Server starting on %s:%d", args.host, args.port)
-    socketio.run(app, host=args.host, port=args.port, debug=args.debug)
+    # allow_unsafe_werkzeug is required with Flask-SocketIO >= 5.4 /
+    # Werkzeug >= 3 when running the dev server (as we do in the container).
+    socketio.run(app, host=args.host, port=args.port, debug=args.debug,
+                 allow_unsafe_werkzeug=True)
