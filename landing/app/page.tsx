@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import Lenis from "lenis";
-import { ArrowDown, Bot, Mic, Move3d, Sparkles } from "lucide-react";
+import { ArrowDown, Bot, Mic, Move3d } from "lucide-react";
 import HeroStage, { type HeroStageHandle } from "@/components/HeroStage";
-import DemoControls from "@/components/DemoControls";
+import PillRemote from "@/components/PillRemote";
+import EdgeLinks from "@/components/EdgeLinks";
 import ScatterText from "@/components/ScatterText";
 import { useMascotProximity, type MascotPoint, type TouchInfo } from "@/lib/mascot-proximity";
+import type { Framing } from "@/lib/landing-engine";
 import {
   BOOP_LINES,
   DODGE_AUDIO,
@@ -52,9 +54,34 @@ const ZONE_POSE: Record<string, { x: number; rot: number; depth: number }> = {
 };
 const WALK_ZONES = new Set(["walk", "walk2", "passthrough"]);
 
+// scroll zone → chapter (0 hero, 1 features, 2 playground, 3 contact)
+const ZONE_CHAPTER: Record<string, number> = {
+  hero: 0,
+  walk: 1,
+  forward: 1,
+  walk2: 1,
+  passthrough: 2,
+  pull: 2,
+  bye: 3,
+};
+const CHAPTER_FRAMING: Framing[] = ["closeup", "mid", "full", "closeup"];
+const CHAPTER_NAMES = ["Meet the host", "What she does", "Playground", "Say hello"];
+
+const FEATURE_CARDS = [
+  { id: "card-knowledge", icon: Bot, t: "Knowledge-aware", d: "Hardcoded knowledge base today, Obsidian + semantic search on the roadmap." },
+  { id: "card-voice", icon: Mic, t: "Voice-first", d: "Kokoro TTS streams 24kHz PCM with lip-sync, expressions and Mixamo gestures." },
+  { id: "card-stage", icon: Move3d, t: "Agentic stage", d: "VRM + three.js + emote state machine. She idles, thinks, performs." },
+];
+
+const HOW_ROWS: [string, string, string][] = [
+  ["how-1", "1 · Press a button", "Say Hi / Dance / Hip-Hop / Who is Rahim — staged clips + voice."],
+  ["how-2", "2 · Switch models", "Aiko ↔ Yuki. Same lines, different energy."],
+  ["how-3", "3 · Scroll", "She walks, shoves cards, passes through the page."],
+];
+
 export default function Landing() {
   const stageRef = useRef<HeroStageHandle>(null);
-  const [caption, setCaption] = useState("Meet Aiko — click Say Hi to wake her up. 🔊 needs one tap first.");
+  const [caption, setCaption] = useState("Meet Aiko — tap a button below to wake her up. 🔊 needs one tap first.");
   const [amp, setAmp] = useState(0);
   const [models, setModels] = useState<{ name: string; url: string }[]>([]);
   const [anims, setAnims] = useState<{ name: string; url: string }[]>([]);
@@ -68,6 +95,7 @@ export default function Landing() {
   const [hearts, setHearts] = useState(0);
   const [ghost, setGhost] = useState(false);
   const [canvasFront, setCanvasFront] = useState(false);
+  const [chapter, setChapter] = useState(0);
   const animUrl = useRef(new Map<string, string>());
   const gagFired = useRef(new Set<string>());
   const zoneRef = useRef("hero");
@@ -111,7 +139,9 @@ export default function Landing() {
     if (!loadedFirst.current && models.length > 0) {
       loadedFirst.current = true;
       const m = models[0];
-      stageRef.current?.engine()?.loadVRMURL(m.url, PERSONAS[0].animeName);
+      const eng = stageRef.current?.engine();
+      eng?.setFraming("closeup");
+      void eng?.loadVRMURL(m.url, PERSONAS[0].animeName);
     }
   }, [models]);
 
@@ -160,7 +190,7 @@ export default function Landing() {
 
   useMascotProximity(mascotRef, handleTouch, !reduced);
 
-  // ---- scroll director: zones with depth + ghost + pass-through ----
+  // ---- scroll director: zones → chapters, poses, framing, gags ----
   useEffect(() => {
     const onScroll = () => {
       const doc = document.documentElement;
@@ -200,6 +230,9 @@ export default function Landing() {
         zoneRef.current = zone;
         setGhost(zone === "forward");
         setCanvasFront(zone === "passthrough");
+        const ch = ZONE_CHAPTER[zone];
+        setChapter(ch);
+        eng?.setFraming(CHAPTER_FRAMING[ch]);
       }
 
       const fire = (key: string, line: string, fn?: () => void) => {
@@ -328,6 +361,10 @@ export default function Landing() {
     [busy, onDemo, switchPersona, unlockAudio],
   );
 
+  const scrollTo = useCallback((id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   // ---- pointer: gaze tracking + dodge + boop ----
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const eng = stageRef.current?.engine();
@@ -376,7 +413,7 @@ export default function Landing() {
 
   return (
     <main className="relative" onClick={onMainClick} onPointerMove={onPointerMove}>
-      {/* 3D canvas — behind content, except the scripted pass-through */}
+      {/* full-bleed stage — she IS the page; brief front swap for pass-through */}
       <div className={`fixed inset-0 ${canvasFront ? "pointer-events-none z-20" : "z-0"}`}>
         <HeroStage
           ref={stageRef}
@@ -412,78 +449,148 @@ export default function Landing() {
         </div>
       )}
 
+      {/* ── persistent edge chrome (desktop) ── */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-10 hidden px-7 pt-5 md:block">
+        <div className="flex items-start justify-between">
+          <div className="flex gap-10">
+            <EdgeLinks
+              title="Explore"
+              items={[
+                { label: "The Host", onSelect: () => scrollTo("ch-hero"), hint: "Back to the top" },
+                { label: "Abilities", onSelect: () => scrollTo("ch-features"), hint: "What she does" },
+                { label: "Playground", onSelect: () => scrollTo("ch-playground"), hint: "Touch everything" },
+                { label: "Contact", onSelect: () => scrollTo("ch-contact"), hint: "Say hello" },
+              ]}
+            />
+            <EdgeLinks
+              title="Elsewhere"
+              items={[
+                { label: "GitHub", href: "https://github.com/0xRahim/MindMate" },
+                { label: "Live app", href: "http://localhost:3000" },
+              ]}
+            />
+          </div>
+          <div className="pt-1 text-center">
+            <div className="text-[11px] font-black uppercase tracking-[0.3em] text-white/90">
+              <span className="live-dot mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-300" />
+              MindMate
+            </div>
+            <div key={chapter} className="bubble-pop mt-1 text-[10px] font-bold uppercase tracking-[0.25em] text-white/45">
+              {CHAPTER_NAMES[chapter]}
+            </div>
+          </div>
+          <div className="flex gap-10">
+            <EdgeLinks
+              title="Tiny stuff"
+              align="right"
+              items={[
+                { label: `${models.length} models · ${anims.length} clips` },
+                { label: speaking ? "● speaking…" : nowPlaying ? `♫ ${nowPlaying}` : status },
+              ]}
+            />
+            <EdgeLinks
+              title="Say hello"
+              align="right"
+              items={[
+                { label: "Ask about Rahim", onSelect: () => void onDemo("rahim"), hint: "💘" },
+                { label: "Make her dance", onSelect: () => void onDemo("dance"), hint: "♫" },
+                { label: "Stop", onSelect: onStop, hint: "Back to idle" },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── mobile mini bar ── */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-10 flex items-center justify-between px-4 pt-4 md:hidden">
+        <div className="text-[11px] font-black uppercase tracking-[0.3em] text-white/90">
+          <span className="live-dot mr-2 inline-block h-1.5 w-1.5 rounded-full bg-cyan-300" />
+          MindMate
+        </div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+          {activePersona.animeName.split(" ")[1]} ● {CHAPTER_NAMES[chapter]}
+        </div>
+      </div>
+
+      {/* ── bottom remote stack (persists across chapters) ── */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 px-4 pb-4">
+        <div key={caption} className="bubble-pop w-full max-w-md rounded-2xl border border-white/15 bg-black/60 p-3 text-[12px] leading-relaxed shadow-2xl backdrop-blur-xl">
+          <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest" style={{ color: activePersona.color }}>
+            <span>{activePersona.animeName} · {activePersona.title}</span>
+            <span className="flex gap-[3px]">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <span key={i} className="inline-block w-[3px] rounded bg-current transition-all" style={{ height: `${4 + Math.min(14, (amp / 100) * 16 * Math.abs(Math.sin(i)))}px`, opacity: speaking ? 1 : 0.35 }} />
+              ))}
+            </span>
+          </div>
+          {caption}
+          {gag && <div className="mt-1 text-[11px] text-white/50">🎬 {gag}</div>}
+        </div>
+        <PillRemote persona={persona} setPersona={switchPersona} busy={busy} speaking={speaking} nowPlaying={nowPlaying} onDemo={onDemo} onStop={onStop} />
+        <div className="text-[10px] tracking-wide text-white/35">
+          {status} · scroll — she walks on the page
+        </div>
+      </div>
+
+      {/* ── chapters (edge-anchored, she owns the middle) ── */}
       <div className="relative z-10">
-        {/* ── HERO ── */}
-        <section className="flex min-h-screen flex-col items-center justify-end px-4 pb-10 pt-24">
-          <motion.div {...fadeUp} className="pointer-events-none mb-auto pt-10 text-center">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-black/50 px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-200 backdrop-blur">
-              <span className="live-dot inline-block h-2 w-2 rounded-full bg-cyan-300" />
-              MindMate · Live static demo
-            </div>
-            <h1 className="text-5xl font-black leading-tight md:text-7xl">
-              Meet <ScatterText id="hero-title" text="Aiko & Yuki" className="glow-text" />
-            </h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm text-white/70 md:text-base">
-              Your anime companions for knowledge, tasks and vibes. They talk, dance, and — fair warning — they walk off the stage.
-            </p>
-          </motion.div>
-
-          {/* speech bubble */}
-          <div key={caption} className="bubble-pop pointer-events-none mb-3 w-full max-w-lg rounded-2xl border border-white/15 bg-black/60 p-3.5 text-[13px] leading-relaxed shadow-2xl backdrop-blur-xl">
-            <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest" style={{ color: activePersona.color }}>
-              <span>{activePersona.animeName} · {activePersona.title}</span>
-              <span className="flex gap-[3px]">
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <span key={i} className="inline-block w-[3px] rounded bg-current transition-all" style={{ height: `${4 + Math.min(14, (amp / 100) * 16 * Math.abs(Math.sin(i)))}px`, opacity: speaking ? 1 : 0.35 }} />
-                ))}
-              </span>
-            </div>
-            {caption}
-            {gag && <div className="mt-1 text-[11px] text-white/50">🎬 4th-wall gag: {gag}</div>}
-          </div>
-
-          <DemoControls persona={persona} setPersona={switchPersona} busy={busy} speaking={speaking} nowPlaying={nowPlaying} onDemo={onDemo} onStop={onStop} />
-
-          <div className="pointer-events-none mt-3 flex items-center gap-2 text-[11px] text-white/50">
-            <ArrowDown size={13} className="animate-bounce" /> scroll — she walks on the page <span className="text-white/30">· {status}</span>
+        {/* CH 1 · HERO — empty stage + scroll cue */}
+        <section id="ch-hero" className="pointer-events-none relative min-h-screen">
+          <div className="absolute bottom-40 right-5 hidden items-center gap-2 text-[11px] text-white/50 md:flex">
+            scroll <ArrowDown size={13} className="animate-bounce" />
           </div>
         </section>
 
-        {/* ── FEATURES (she shoves these, then sends them behind her) ── */}
-        <section className="mx-auto grid max-w-5xl gap-4 px-4 py-28 md:grid-cols-3" data-ghost={ghost}>
-          {[
-            { id: "card-knowledge", icon: Bot, t: "Knowledge-aware", d: "Hardcoded knowledge base today, Obsidian + semantic search on the roadmap. Ask her anything in her domain." },
-            { id: "card-voice", icon: Mic, t: "Voice-first", d: "Kokoro TTS streams 24kHz PCM with lip-sync, expressions and Mixamo-choreographed gestures." },
-            { id: "card-stage", icon: Move3d, t: "Agentic stage", d: "VRM + three.js + emote state machine. She idles, thinks, performs — and commits A/V atomically." },
-          ].map((f, i) => (
-            <motion.div
-              key={f.t}
-              {...fadeUp}
-              transition={{ duration: 0.6, delay: i * 0.1 }}
-              data-interactive="card"
-              data-interactive-id={f.id}
-              onClick={() => cardClick(f.id)}
-              className="tilt-card cursor-pointer rounded-2xl border border-white/12 bg-white/[0.06] p-5 backdrop-blur-xl"
-            >
-              <f.icon size={22} className="mb-2 text-cyan-300" />
-              <div className="text-base font-extrabold">{f.t}</div>
-              <div className="mt-1 text-[13px] leading-relaxed text-white/65">{f.d}</div>
-              <div className="mt-2 text-[11px] font-bold text-white/35">click → she demos it</div>
-            </motion.div>
-          ))}
+        {/* CH 2 · FEATURES — chips docked at the edges (stacked on mobile) */}
+        <section id="ch-features" className="flex min-h-screen flex-col justify-center gap-3 px-4 py-24 md:flex-row md:items-center md:justify-between md:px-8" data-ghost={ghost}>
+          <div className="pointer-events-none flex flex-col items-stretch justify-center gap-3 md:flex-1 md:items-start">
+            {[FEATURE_CARDS[0], FEATURE_CARDS[1]].map((f, i) => (
+              <motion.div
+                key={f.id}
+                {...fadeUp}
+                transition={{ duration: 0.6, delay: i * 0.1 }}
+                data-interactive="card"
+                data-interactive-id={f.id}
+                onClick={() => cardClick(f.id)}
+                className="tilt-card edge-chip pointer-events-auto w-full cursor-pointer rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px]"
+              >
+                <f.icon size={20} className="mb-1.5 text-cyan-300" />
+                <div className="text-sm font-extrabold">{f.t}</div>
+                <div className="mt-1 text-[12px] leading-relaxed text-white/65">{f.d}</div>
+                <div className="mt-1.5 text-[10px] font-bold text-white/35">tap → she demos it</div>
+              </motion.div>
+            ))}
+          </div>
+          <div className="pointer-events-none flex flex-col items-stretch justify-center gap-3 md:flex-1 md:items-end">
+            {(() => {
+              const f = FEATURE_CARDS[2];
+              return (
+                <motion.div
+                  key={f.id}
+                  {...fadeUp}
+                  transition={{ duration: 0.6, delay: 0.2 }}
+                  data-interactive="card"
+                  data-interactive-id={f.id}
+                  onClick={() => cardClick(f.id)}
+                className="tilt-card edge-chip pointer-events-auto w-full cursor-pointer rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px]"
+                >
+                  <f.icon size={20} className="mb-1.5 text-cyan-300" />
+                  <div className="text-sm font-extrabold">{f.t}</div>
+                  <div className="mt-1 text-[12px] leading-relaxed text-white/65">{f.d}</div>
+                  <div className="mt-1.5 text-[10px] font-bold text-white/35">tap → she demos it</div>
+                </motion.div>
+              );
+            })()}
+          </div>
         </section>
 
-        {/* ── HOW IT WORKS ── */}
-        <section className="mx-auto max-w-4xl px-4 py-24">
-          <motion.h2 {...fadeUp} className="text-center text-3xl font-black md:text-4xl">
-            Static demo, <ScatterText id="section-how" text="real feel" className="glow-text" />
-          </motion.h2>
-          <div className="mt-8 space-y-3">
-            {[
-              ["how-1", "1 · Press a button", "Say Hi / Dance / Hip-Hop / Who is Rahim — every press plays a staged FBX clip + emote + expression + pre-generated Kokoro line."],
-              ["how-2", "2 · Switch models", "Aiko (cheerful idol) ↔ Yuki (cool kuudere). Same lines, different energy. VRM crossfade with entrance pop."],
-              ["how-3", "3 · Scroll", "The character leaves the stage: walks, pokes cards (they tilt!), climbs the headlines, shakes the page. Pure scroll-linked theatre."],
-            ].map(([id, t, d], i) => (
+        {/* CH 3 · PLAYGROUND — how-rows stacked at the right edge */}
+        <section id="ch-playground" className="flex min-h-screen items-center justify-end px-4 md:px-8">
+          <div className="pointer-events-none flex w-full max-w-[300px] flex-col gap-2.5">
+            <div className="mb-1 text-right text-[10px] font-black uppercase tracking-[0.25em] text-white/50">
+              Touch everything
+            </div>
+            {HOW_ROWS.map(([id, t, d], i) => (
               <motion.div
                 key={t}
                 {...fadeUp}
@@ -491,21 +598,23 @@ export default function Landing() {
                 data-interactive="row"
                 data-interactive-id={id}
                 onClick={() => cardClick(id)}
-                className="tilt-card flex cursor-pointer gap-4 rounded-2xl border border-white/10 bg-black/50 p-4 backdrop-blur-xl"
+                className="tilt-card pointer-events-auto cursor-pointer rounded-2xl border border-white/10 bg-black/50 p-3.5 backdrop-blur-xl"
               >
-                <div className="text-sm font-black text-fuchsia-300">{t}</div>
-                <div className="text-[13px] text-white/70">{d}</div>
+                <div className="text-[13px] font-black text-fuchsia-300">{t}</div>
+                <div className="mt-0.5 text-[12px] text-white/70">{d}</div>
               </motion.div>
             ))}
           </div>
         </section>
 
-        {/* ── CTA ── */}
-        <section className="mx-auto max-w-3xl px-4 pb-24 pt-10 text-center">
-          <motion.div {...fadeUp} data-interactive="panel" data-interactive-id="cta-box" className="rounded-3xl border border-white/12 bg-gradient-to-br from-fuchsia-500/15 via-black/60 to-cyan-400/15 p-8 backdrop-blur-xl">
-            <Sparkles size={26} className="mx-auto mb-2 text-amber-300" />
-            <div className="text-2xl font-black md:text-3xl">This was just the trailer.</div>
-            <p className="mx-auto mt-2 max-w-md text-[13px] text-white/65">
+        {/* CH 4 · CONTACT — the one centered moment */}
+        <section id="ch-contact" className="flex min-h-screen items-center justify-center px-4 pb-32">
+          <motion.div {...fadeUp} data-interactive="panel" data-interactive-id="cta-box" className="pointer-events-auto w-full max-w-md rounded-3xl border border-white/12 bg-gradient-to-br from-fuchsia-500/15 via-black/60 to-cyan-400/15 p-7 text-center backdrop-blur-xl">
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Say hello</div>
+            <div className="mt-1 text-2xl font-black md:text-3xl">
+              <ScatterText id="cta-title" text="This was just the trailer." />
+            </div>
+            <p className="mx-auto mt-2 max-w-sm text-[13px] text-white/65">
               The full MindMate app adds live chat, mic input, Gemini brain and real-time TTS. Same stage, no script.
             </p>
             <div className="mt-5 flex items-center justify-center gap-3">
@@ -518,8 +627,10 @@ export default function Landing() {
             </div>
             <div className="mt-4 text-[11px] text-white/40">landing demo · static audio · {models.length} models · {anims.length} animations</div>
           </motion.div>
-          <footer className="mt-10 text-[11px] text-white/35">MindMate landing — Aiko & Yuki will remember you scrolled. 👀</footer>
         </section>
+        <footer className="relative z-10 pb-32 text-center text-[11px] text-white/35">
+          MindMate landing — Aiko & Yuki will remember you scrolled. 👀
+        </footer>
       </div>
     </main>
   );

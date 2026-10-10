@@ -7,8 +7,16 @@ import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { loadMixamoAnimation } from "@/lib/three/retarget";
 import { EMOTE_MAP, baseIdle, type EmoteId } from "@/lib/three/emotes";
 
+export type Framing = "closeup" | "mid" | "full";
+
 // Same idle-clip matcher as the main frontend (StageEngine).
 const IDLE_PATTERNS = [/idle/i, /standing.*idle/i, /stand.*neutral/i, /breathing/i, /waiting/i];
+
+const FRAMING_PRESETS: Record<Framing, { dist: number; ty: number }> = {
+  closeup: { dist: 1.9, ty: 1.42 },
+  mid: { dist: 2.7, ty: 1.22 },
+  full: { dist: 3.4, ty: 1.0 },
+};
 
 export type LandingEvents = {
   onCaption: (t: string) => void;
@@ -79,6 +87,9 @@ export class LandingEngine {
   private vy = 0;
   private hopping = false;
   private frame = 0;
+  // camera framing: chapter default + temporary clip override (auto pull-back)
+  private framing: Framing = "closeup";
+  private framingAuto: Framing | null = null;
 
   private gltfLoader = new GLTFLoader();
   charRoot = new THREE.Group();
@@ -87,7 +98,7 @@ export class LandingEngine {
     this.wrap = wrap;
     this.ev = ev;
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-    this.camera.position.set(0, 1.5, 3.4);
+    this.camera.position.set(0, 1.55, 1.9); // giant close-up default
     this.gltfLoader.register((p) => new VRMLoaderPlugin(p));
     this.initScene();
     this.tick();
@@ -107,9 +118,9 @@ export class LandingEngine {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.enablePan = false;
-    this.controls.minDistance = 2;
+    this.controls.minDistance = 1.4;
     this.controls.maxDistance = 6;
-    this.controls.target.set(0, 1.3, 0);
+    this.controls.target.set(0, 1.42, 0);
     this.controls.update();
 
     this.scene.add(new THREE.HemisphereLight(0xffe8ff, 0x14092b, 0.9));
@@ -243,6 +254,8 @@ export class LandingEngine {
     this.activeAction = action;
     this.fbxPlaying = true;
     this.emote = "idle";
+    // auto pull-back: full-body stage for performances, chapter framing for idles
+    this.framingAuto = IDLE_PATTERNS.some((p) => p.test(name)) ? null : "full";
     this.ev.onNowPlaying(name);
     if (!doLoop) {
       const done = (e: { action: THREE.AnimationAction }) => {
@@ -270,6 +283,7 @@ export class LandingEngine {
     this.autoIdle = false;
     this.idleCycleAt = Infinity;
     this.emote = "idle";
+    this.framingAuto = null; // back to chapter framing
     this.ev.onNowPlaying(null);
     setTimeout(() => this.startIdleLoop(), 400);
   }
@@ -280,6 +294,7 @@ export class LandingEngine {
     this.emote = id;
     this.autoIdle = false;
     this.idleCycleAt = Infinity;
+    this.framingAuto = null;
     if (this.fbxPlaying) {
       this.activeAction?.fadeOut(0.3);
       const cur = this.activeAction;
@@ -356,6 +371,7 @@ export class LandingEngine {
     this.fbxPlaying = true;
     this.autoIdle = true;
     this.emote = "idle";
+    this.framingAuto = null; // idle always plays in chapter framing
     this.ev.onNowPlaying(name);
     this.idleCycleAt = this.clock.elapsedTime + (18 + Math.random() * 12);
   }
@@ -374,11 +390,10 @@ export class LandingEngine {
     this.mouth = 0;
   }
 
-  /** Button-press juice: camera dolly + rim flash. */
+  /** Button-press juice: rim flash (camera pull is handled by framing). */
   juice(color = 0x22d3ee) {
     this.flash = 1;
     if (this.rim) this.rim.color.setHex(color);
-    this.camera.position.z = 2.9;
   }
 
   /** Scroll director pose. x in world units, rotY radians, walking 0..1, depth 0..1. */
@@ -400,6 +415,15 @@ export class LandingEngine {
   /** Dodge sidestep impulse (decays over ~1s). dir: -1 left, +1 right. */
   nudge(dir: number) {
     this.nudgeX = Math.max(-1.4, Math.min(1.4, this.nudgeX + dir * 0.9));
+  }
+
+  /** Chapter-level framing default (hero close-up, playground full…). */
+  setFraming(f: Framing) {
+    this.framing = f;
+  }
+
+  private effectiveFraming(): Framing {
+    return this.framingAuto ?? this.framing;
   }
 
   /** Cursor gaze target in normalized -1..1 space. */
@@ -586,11 +610,20 @@ export class LandingEngine {
       s.z += (ds - s.z) * Math.min(1, dt * 10);
     }
 
-    // flash decay + camera ease (depth pulls the camera in with her)
+    // flash decay + framing ease (target tracks her, distance eases;
+    // depth + button flash pull the camera in with her)
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.5);
     if (this.rim) this.rim.intensity = 1.1 + this.flash * 3;
-    const camZ = 3.4 - this.depth * 0.9;
-    this.camera.position.z += (camZ - this.camera.position.z) * Math.min(1, dt * 3);
+    const preset = FRAMING_PRESETS[this.effectiveFraming()];
+    const wantDist = Math.max(1.4, preset.dist - this.depth * 0.9 - Math.min(1, this.flash) * 0.35);
+    const ck = Math.min(1, dt * 2.5);
+    this.controls.target.x += (this.charRoot.position.x - this.controls.target.x) * ck;
+    this.controls.target.y += (preset.ty - this.controls.target.y) * ck;
+    const dir = this.camera.position.clone().sub(this.controls.target);
+    const len = Math.max(0.001, dir.length());
+    dir.multiplyScalar(1 / len);
+    const wantPos = this.controls.target.clone().addScaledVector(dir, wantDist);
+    this.camera.position.lerp(wantPos, ck);
 
     // mixer + exclusive motion layer (main-frontend parity):
     // an FBX clip OR a procedural emote drives the bones — never both.

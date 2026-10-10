@@ -11,12 +11,16 @@ bun run build && bun run start               # prod :8081
 
 3D assets are served from `../main/` (VRM/FBX) via `/models|/animations` routes — no duplication.
 
+## Layout — full-bleed stage (Oobi-style)
+
+The VRM is the page: a fixed fullscreen canvas with 4 scroll chapters and edge-anchored UI (corner link columns, top wordmark + chapter eyebrow, bottom speech + remote). Camera framing follows chapters — giant close-up (hero) → mid (features) → full-body (playground) → push-in (contact) — and auto-pulls back to full-body for any dance/performance clip, returning afterward.
+
 ## Demo
 
-* Buttons: **Say Hi** (`Idle`+wave), **Dance** (`Rumba Dancing`), **Hip-Hop** (`Snake Hip Hop Dance`), **Who is Rahim?** (`Plotting`+point + your 💘 line), **Surprise me** (`Crazy Gesture`).
-* Model switcher: **Hoshizora Aiko** (cheerful idol, pink) ↔ **Kurogane Yuki** (cool kuudere, cyan). Order follows sorted `/api/models`.
-* Button press juice: camera dolly-in, rim-light flash, typewriter speech bubble, heart particles, pre-generated voice line with analyser lip-sync.
-* Scroll 4th-wall: fixed canvas, character walks left/right with scroll (`--mascot-x` tilts cards), one-shot gags (walk/climb/pull/bye), screen shake + hearts.
+* Pill remote (bottom): **Aiko|Yuki** toggle + **Say Hi** / **Dance** / **Hip-Hop** / **Who is Rahim?** / **Surprise me** + Stop.
+* Corner columns: Explore (chapter jumps), Elsewhere (GitHub, live app), Tiny stuff (live status), Say hello (demo shortcuts).
+* Button press juice: rim-light flash, speech bubble, heart particles, pre-generated voice line with RMS lip-sync.
+* Scroll 4th-wall: she walks/shoves widgets/ghost-backs/passes through the page; one-shot voiced gags; screen shake + hearts.
 
 ## Audio
 
@@ -35,10 +39,11 @@ Kokoro voices: Aiko=`af_heart@1.05`, Yuki=`af_sky@0.95`.
 ## Structure
 
 ```
-app/page.tsx            # hero + features + how-it-works + CTA, scroll director
-components/HeroStage.tsx DemoControls.tsx
-lib/landing-engine.ts   # slim 3D fork (no Socket.IO): VRM/FBX retarget, emotes, analyser lip-sync, scroll pose
-lib/demo-script.ts      # personas, demo actions, Rahim line
+app/page.tsx            # 4 edge-UI chapters + scroll director (poses, framing, gags, voices)
+components/HeroStage.tsx PillRemote.tsx EdgeLinks.tsx ScatterText.tsx
+lib/landing-engine.ts   # slim 3D fork (no Socket.IO): VRM/FBX retarget, emotes, RMS lip-sync, scroll pose, framing
+lib/demo-script.ts      # personas, demo actions, Rahim line, voice maps
+lib/mascot-proximity.ts # DOM proximity brain (shove/touch)
 lib/three/              # Mixamo retarget + procedural emotes (shared with frontend)
 scripts/gen-audio-kokoro.py
 ```
