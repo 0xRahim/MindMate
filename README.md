@@ -7,7 +7,6 @@ An agentic virtual assistant framework that combines conversational AI with a 3D
 
 ---
 
-![Alt Text](https://raw.githubusercontent.com/0xRahim/MindMate/refs/heads/main/main/animations/cropped.gif)
 
 ## Overview
 
