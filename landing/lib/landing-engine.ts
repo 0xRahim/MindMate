@@ -166,12 +166,19 @@ export class LandingEngine {
 
   async fetchAssets() {
     try {
-      const [m, a] = await Promise.all([
-        fetch("/api/models").then((r) => r.json()),
-        fetch("/api/animations").then((r) => r.json()),
+      const [mRes, aRes] = await Promise.all([
+        fetch("/api/models"),
+        fetch("/api/animations"),
       ]);
+      const m = mRes.ok ? await mRes.json() : [];
+      const a = aRes.ok ? await aRes.json() : [];
       this.ev.onModels(m ?? []);
       this.ev.onAnims(a ?? []);
+      if (!m?.length) {
+        // Empty list = assets unreachable (e.g. ASSETS_DIR missing on the
+        // host). Surface it in the status bar instead of failing silently.
+        this.ev.onStatus("No VRM models found — /api/models returned empty");
+      }
     } catch {
       this.ev.onStatus("Asset list failed");
     }
@@ -216,6 +223,7 @@ export class LandingEngine {
       // Preload all FBX clips, then loop Idle by default (main-frontend behavior).
       void this.preloadAnimations();
     } catch (e) {
+      console.error("VRM load failed:", url, e);
       this.ev.onStatus(`VRM failed: ${(e as Error).message}`);
     }
   }

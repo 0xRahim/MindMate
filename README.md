@@ -1,40 +1,47 @@
-# MindMate : AI-Powered Virtual Assistant 
+# MindMate : AI-Powered Virtual Assistant
 
-An early version of an agentic virtual assistant framework designed to combine conversational AI with a customizable knowledge base and task automation.
+🌐 **Live demo (landing):** https://mindmate-kappa-seven.vercel.app/
+⭐ **Open source:** https://github.com/0xRahim/MindMate
 
+An agentic virtual assistant framework that combines conversational AI with a 3D anime companion stage, voice interaction, and background coding quests.
 
 ---
+
 ![Alt Text](https://raw.githubusercontent.com/0xRahim/MindMate/refs/heads/main/main/animations/cropped.gif)
 
 ## Overview
 
-The goal of this project is to create a personal AI assistant that is:
+MindMate is a personal AI companion that lives on a live 3D stage:
 
-* Knowledge-aware
-* Extensible
-* Task-oriented
-* Easy to customize
+* **Knowledge-aware** — Gemini brain with live web lookup when built-in knowledge runs out
+* **Voice-first** — mic input, Kokoro TTS streaming voice, RMS lip-sync and expressions
+* **Agentic stage** — VRM + three.js companion (Aiko & Yuki) that idles, thinks, dances and performs
+* **Task-oriented** — background Jules coding quests with PR delivery while she keeps chatting
+* **Extensible** — modular architecture for custom actions and tools
 
-Rather than being a general-purpose chatbot, the assistant is designed to operate within a specific knowledge domain defined by the user.
+Two apps ship in this repo: the **live companion app** (`frontend/`) and the **static landing demo** (`landing/`, deployed above — same stage, pre-generated voice, zero backend).
 
 ---
 
 ## Current Features
 
-* Conversational AI assistant
-* Hardcoded knowledge base support
-* Context-aware responses based on provided knowledge
-* Modular architecture for future expansion
-* Early agent orchestration foundation
-* Simple framework for adding custom actions and tools
+* Conversational AI via Gemini 2.5 Flash (JSON mode) with keyword fallback when no API key is set
+* Live web lookup when her knowledge runs out
+* Voice-first chat: mic input by default, text tucked behind the keyboard key
+* Kokoro TTS 24kHz PCM streaming with A/V-sync state machine (animation + emote commit on first audio)
+* VRM stage: three.js + three-vrm, Mixamo clip retargeting, procedural emotes, scroll-driven walk/gags
+* Two personas: Hoshizora Aiko (cheerful idol) & Kurogane Yuki (cool kuudere) — switchable mid-chat
+* Background Jules quests (`/code …`) — long-horizon coding sessions that drop a PR link in chat
+* Pill presets (Say Hi / Dance / Hip-Hop / Who is Rahim? / Surprise me) wired through the live chat API
+* Self-contained landing deployment: VRM/FBX bundled in `public/`, no env vars needed
 
 ---
 
 ## Project Status
 
-This is the initial version of the VA Harness.
+Working companion app + deployed landing demo.
 
-The current focus is validating the core architecture and interaction model before introducing more advanced capabilities such as dynamic knowledge ingestion, memory systems, and automation workflows.
+The current focus is deepening the knowledge layer (Obsidian vault, semantic search) and expanding background quests, while keeping the stage, voice pipeline, and chat API stable.
 
 ---
 
@@ -43,6 +50,7 @@ The current focus is validating the core architecture and interaction model befo
 ### Knowledge Base
 
 * [x] Hardcoded knowledge base
+* [x] Live web lookup
 * [ ] File-based knowledge ingestion
 * [ ] Markdown document support
 * [ ] Obsidian vault integration
@@ -52,15 +60,16 @@ The current focus is validating the core architecture and interaction model befo
 ### Agent Capabilities
 
 * [x] Basic assistant workflow
+* [x] Voice-first interaction (mic + TTS + lip-sync)
+* [x] Background coding quests (Jules sessions + PR delivery)
 * [ ] Multi-step reasoning
 * [ ] Long-term memory
-* [ ] Tool calling
 * [ ] Agent planning
 * [ ] Multi-agent workflows
 
 ### Automation SDK
 
-* [ ] Custom task registration
+* [x] Custom task registration (`/code` task prefix)
 * [ ] Workflow definitions
 * [ ] Event-driven actions
 * [ ] Plugin architecture
@@ -72,11 +81,16 @@ The current focus is validating the core architecture and interaction model befo
 
 ```text
 Browser
-  ├── Next.js frontend/ (:8080, bun)
+  ├── frontend/ (:3000 dev / :8080 prod, bun)
   │      ├── 3D stage (three.js + three-vrm, Mixamo retarget)
   │      ├── A/V sync state machine (expression + animation commit on first audio)
   │      ├── /api/chat  (Gemini 2.5 Flash JSON mode + keyword fallback)
+  │      ├── /api/jules (background quest proxy, key stays server-side)
   │      └── /models|/animations  (serve 3D assets from main/)
+  │
+  ├── landing/ (:3001 dev / :8081 prod, live on Vercel)
+  │      ├── Static demo: same stage engine, pre-generated voice, no backend
+  │      └── VRM/FBX bundled in public/ (ASSETS_DIR / ../main fallback)
   │
   ├── Kokoro TTS audio-model/ (:5000, Socket.IO PCM stream)
   │
@@ -88,8 +102,11 @@ Future versions will replace the hardcoded knowledge layer with an Obsidian-back
 ## Running
 
 ```bash
-# Dev (frontend only, TTS optional at :5000)
+# Live companion app (needs GEMINI_API_KEY for full brain, TTS optional at :5000)
 cd frontend && bun install && bun run dev     # http://127.0.0.1:3000
+
+# Landing demo (no keys needed — static audio + bundled 3D)
+cd landing && bun install && bun run dev      # http://127.0.0.1:3001
 
 # Full stack (Podman)
 ./mindmate.sh start --build   # frontend :8080 + TTS :5000
@@ -97,7 +114,7 @@ cd frontend && bun install && bun run dev     # http://127.0.0.1:3000
 ./mindmate.sh stop            # stop, keep images
 ```
 
-Config via `.env` (see `.env.example`): `GEMINI_API_KEY`, `FRONTEND_PORT`, `TTS_PORT`.
+Config via `.env` (see `.env.example`): `GEMINI_API_KEY`, `JULES_API_KEY`, `JULES_SOURCE`, `FRONTEND_PORT`, `TTS_PORT`.
 Without `GEMINI_API_KEY` the chat API uses its keyword fallback.
 
 ---
@@ -125,6 +142,4 @@ The long-term vision is to provide a customizable AI operating layer where users
 
 ## Notes
 
-This project is intentionally minimal in its current state. The objective of the first release is to establish a stable foundation for knowledge-driven assistants and future agent automation capabilities rather than delivering a complete production-ready platform.
-
-
+Star / fork / PRs welcome at https://github.com/0xRahim/MindMate — the landing demo above is the fastest way to meet Aiko before self-hosting the full app.

@@ -1,5 +1,8 @@
 # MindMate Landing — Meet Aiko & Yuki
 
+🌐 **Live:** https://mindmate-kappa-seven.vercel.app/
+⭐ **Repo:** https://github.com/0xRahim/MindMate
+
 Animated static-demo landing page (separate Next.js app, port **3001** dev / **8081** prod).
 
 ## Run
@@ -9,7 +12,9 @@ cd landing && bun install && bun run dev     # http://127.0.0.1:3001
 bun run build && bun run start               # prod :8081
 ```
 
-3D assets are served from `../main/` (VRM/FBX) via `/models|/animations` routes — no duplication.
+3D assets resolve from bundled `public/models|animations/` first (self-contained on Vercel),
+falling back to `../main/` locally and `ASSETS_DIR=/assets` in Docker — served by the
+`/models|/animations` routes (`outputFileTracingIncludes` keeps them in serverless traces).
 
 ## Layout — full-bleed stage (Oobi-style)
 

@@ -468,7 +468,7 @@ export default function Landing() {
               title="Elsewhere"
               items={[
                 { label: "GitHub", href: "https://github.com/0xRahim/MindMate" },
-                { label: "Live app", href: "http://127.0.0.1:3000" },
+                { label: "Roll your own", href: "https://github.com/0xRahim/MindMate" },
               ]}
             />
           </div>
@@ -617,8 +617,8 @@ export default function Landing() {
               The full MindMate app adds live chat, mic input, a Gemini brain with live web lookup, background Jules coding quests with PR delivery, and real-time TTS. Same agent, same stage, no script.
             </p>
             <div className="mt-5 flex items-center justify-center gap-3">
-              <a href="http://127.0.0.1:3000" className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-black transition hover:scale-105">
-                Open the live app
+              <a href="https://github.com/0xRahim/MindMate" className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-black transition hover:scale-105">
+                Make your own →
               </a>
               <button onClick={() => onDemo("rahim")} className="rounded-xl border border-white/20 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-white/10">
                 Ask about Rahim 💘
@@ -629,6 +629,10 @@ export default function Landing() {
         </section>
         <footer className="pointer-events-none relative z-10 pb-32 text-center text-[11px] text-white/35">
           MindMate landing — Aiko & Yuki will remember you scrolled. 👀
+          <br />
+          <a href="https://github.com/0xRahim/MindMate" className="pointer-events-auto underline decoration-white/30 underline-offset-2 transition hover:text-white/70">
+            Open source — github.com/0xRahim/MindMate
+          </a>
         </footer>
       </div>
     </main>

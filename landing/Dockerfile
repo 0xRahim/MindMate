@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
-# App source. Large 3D assets (VRM/FBX/GLB) are NOT baked in — they are
-# bind-mounted at /assets at runtime (see compose.yaml, ASSETS_DIR)
+# App source. Large 3D assets (VRM/FBX/GLB) resolve in this order:
+# 1) baked-in landing/public/models + landing/public/animations,
+# 2) bind-mounted at /assets at runtime (see compose.yaml, ASSETS_DIR)
 # and served by the /models|/animations|/background route handlers.
 COPY . .
 

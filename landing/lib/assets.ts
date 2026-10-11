@@ -9,6 +9,13 @@ export function assetsDir(): string {
   return path.resolve(process.cwd(), "..", "main");
 }
 
+/** Bundled web assets (landing/public). Preferred on hosts like Vercel
+ *  where neither ASSETS_DIR nor ../main exists — the deployment is
+ *  self-contained because the VRM/FBX files are committed under public/. */
+export function publicDir(): string {
+  return path.resolve(process.cwd(), "public");
+}
+
 export function safeJoin(root: string, sub: string, file: string[]): string | null {
   const resolved = path.resolve(root, sub, ...file);
   if (!resolved.startsWith(path.resolve(root, sub) + path.sep)) return null;
