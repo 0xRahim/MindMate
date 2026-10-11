@@ -1167,6 +1167,12 @@ export class StageEngine {
     this.controls.update();
     if (this.vrm) {
       if (this.mixer) this.mixer.update(dt);
+      // Head/neck clip tracks are stripped in the retarget, so no clip writes
+      // these bones — reset to neutral or the additive gaze below accumulates
+      // every frame and the head spins. (Emotes overwrite absolutely after this.)
+      const hd0 = this.getBone("head"), nk0 = this.getBone("neck");
+      if (hd0) hd0.rotation.set(0, 0, 0);
+      if (nk0) nk0.rotation.set(0, 0, 0);
       if (this.fbxPlaying) {
         if (this.autoIdle && t > this.idleCycleAt) this.startIdleLoop();
       } else if (this.activeEmote) {

@@ -51,6 +51,9 @@ export function loadMixamoAnimation(url: string, vrm: VRM): Promise<THREE.Animat
 
     for (const track of clip.tracks) {
       const [mixBone, prop] = track.name.split(".");
+      // Head + neck stay under procedural control (gaze, emotes, expressions):
+      // baked Mixamo head tracks come out as rolls on these VRM models.
+      if (mixBone === "mixamorigHead" || mixBone === "mixamorigNeck") continue;
       const vrmKey = MIXAMO_VRM_RIG_MAP[mixBone];
       const vrmNode = vrmKey ? vrm.humanoid.getNormalizedBoneNode(vrmKey as never) : null;
       const fbxNode = asset.getObjectByName(mixBone);

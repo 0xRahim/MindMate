@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import Lenis from "lenis";
-import { ArrowDown, Bot, Mic, Move3d } from "lucide-react";
+import { ArrowDown, Bot, Globe, Layers, Mic, Move3d } from "lucide-react";
 import HeroStage, { type HeroStageHandle } from "@/components/HeroStage";
 import PillRemote from "@/components/PillRemote";
 import EdgeLinks from "@/components/EdgeLinks";
@@ -70,7 +70,9 @@ const CHAPTER_NAMES = ["Meet the host", "What she does", "Playground", "Say hell
 const FEATURE_CARDS = [
   { id: "card-knowledge", icon: Bot, t: "Knowledge-aware", d: "Hardcoded knowledge base today, Obsidian + semantic search on the roadmap." },
   { id: "card-voice", icon: Mic, t: "Voice-first", d: "Kokoro TTS streams 24kHz PCM with lip-sync, expressions and Mixamo gestures." },
+  { id: "card-web", icon: Globe, t: "Live web lookup", d: "Same agent — when her knowledge runs out she checks the live internet, then answers aloud on stage." },
   { id: "card-stage", icon: Move3d, t: "Agentic stage", d: "VRM + three.js + emote state machine. She idles, thinks, performs." },
+  { id: "card-quests", icon: Layers, t: "Background quests", d: "Same agent, long horizon — \"/code fix the failing test\" runs a Jules session in the background while she keeps chatting, then drops the PR link in chat." },
 ];
 
 const HOW_ROWS: [string, string, string][] = [
@@ -533,7 +535,7 @@ export default function Landing() {
       </div>
 
       {/* ── chapters (edge-anchored, she owns the middle) ── */}
-      <div className="relative z-10">
+      <div className="pointer-events-none relative z-10">
         {/* CH 1 · HERO — empty stage + scroll cue */}
         <section id="ch-hero" className="pointer-events-none relative min-h-screen">
           <div className="absolute bottom-40 right-5 hidden items-center gap-2 text-[11px] text-white/50 md:flex">
@@ -542,9 +544,9 @@ export default function Landing() {
         </section>
 
         {/* CH 2 · FEATURES — chips docked at the edges (stacked on mobile) */}
-        <section id="ch-features" className="flex min-h-screen flex-col justify-center gap-3 px-4 py-24 md:flex-row md:items-center md:justify-between md:px-8" data-ghost={ghost}>
+        <section id="ch-features" className="pointer-events-none flex min-h-screen flex-col justify-center gap-3 px-4 py-24 md:flex-row md:items-center md:justify-between md:px-8" data-ghost={ghost}>
           <div className="pointer-events-none flex flex-col items-stretch justify-center gap-3 md:flex-1 md:items-start">
-            {[FEATURE_CARDS[0], FEATURE_CARDS[1]].map((f, i) => (
+            {[FEATURE_CARDS[0], FEATURE_CARDS[1], FEATURE_CARDS[2]].map((f, i) => (
               <motion.div
                 key={f.id}
                 {...fadeUp}
@@ -552,40 +554,37 @@ export default function Landing() {
                 data-interactive="card"
                 data-interactive-id={f.id}
                 onClick={() => cardClick(f.id)}
-                className="tilt-card edge-chip pointer-events-auto w-full cursor-pointer rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px]"
+                className={`tilt-card edge-chip pointer-events-auto w-full rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px] ${CARD_DEMO[f.id] ? "cursor-pointer" : ""}`}
               >
                 <f.icon size={20} className="mb-1.5 text-cyan-300" />
                 <div className="text-sm font-extrabold">{f.t}</div>
                 <div className="mt-1 text-[12px] leading-relaxed text-white/65">{f.d}</div>
-                <div className="mt-1.5 text-[10px] font-bold text-white/35">tap → she demos it</div>
+                <div className="mt-1.5 text-[10px] font-bold text-white/35">{CARD_DEMO[f.id] ? "tap → she demos it" : "live in the full app"}</div>
               </motion.div>
             ))}
           </div>
           <div className="pointer-events-none flex flex-col items-stretch justify-center gap-3 md:flex-1 md:items-end">
-            {(() => {
-              const f = FEATURE_CARDS[2];
-              return (
-                <motion.div
-                  key={f.id}
-                  {...fadeUp}
-                  transition={{ duration: 0.6, delay: 0.2 }}
-                  data-interactive="card"
-                  data-interactive-id={f.id}
-                  onClick={() => cardClick(f.id)}
-                className="tilt-card edge-chip pointer-events-auto w-full cursor-pointer rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px]"
-                >
-                  <f.icon size={20} className="mb-1.5 text-cyan-300" />
-                  <div className="text-sm font-extrabold">{f.t}</div>
-                  <div className="mt-1 text-[12px] leading-relaxed text-white/65">{f.d}</div>
-                  <div className="mt-1.5 text-[10px] font-bold text-white/35">tap → she demos it</div>
-                </motion.div>
-              );
-            })()}
+            {[FEATURE_CARDS[3], FEATURE_CARDS[4]].map((f, i) => (
+              <motion.div
+                key={f.id}
+                {...fadeUp}
+                transition={{ duration: 0.6, delay: 0.2 + i * 0.1 }}
+                data-interactive="card"
+                data-interactive-id={f.id}
+                onClick={() => cardClick(f.id)}
+                className={`tilt-card edge-chip pointer-events-auto w-full rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-xl md:max-w-[250px] ${CARD_DEMO[f.id] ? "cursor-pointer" : ""}`}
+              >
+                <f.icon size={20} className="mb-1.5 text-cyan-300" />
+                <div className="text-sm font-extrabold">{f.t}</div>
+                <div className="mt-1 text-[12px] leading-relaxed text-white/65">{f.d}</div>
+                <div className="mt-1.5 text-[10px] font-bold text-white/35">{CARD_DEMO[f.id] ? "tap → she demos it" : "live in the full app"}</div>
+              </motion.div>
+            ))}
           </div>
         </section>
 
         {/* CH 3 · PLAYGROUND — how-rows stacked at the right edge */}
-        <section id="ch-playground" className="flex min-h-screen items-center justify-end px-4 md:px-8">
+        <section id="ch-playground" className="pointer-events-none flex min-h-screen items-center justify-end px-4 md:px-8">
           <div className="pointer-events-none flex w-full max-w-[300px] flex-col gap-2.5">
             <div className="mb-1 text-right text-[10px] font-black uppercase tracking-[0.25em] text-white/50">
               Touch everything
@@ -608,14 +607,14 @@ export default function Landing() {
         </section>
 
         {/* CH 4 · CONTACT — the one centered moment */}
-        <section id="ch-contact" className="flex min-h-screen items-center justify-center px-4 pb-32">
+        <section id="ch-contact" className="pointer-events-none flex min-h-screen items-center justify-center px-4 pb-32">
           <motion.div {...fadeUp} data-interactive="panel" data-interactive-id="cta-box" className="pointer-events-auto w-full max-w-md rounded-3xl border border-white/12 bg-gradient-to-br from-fuchsia-500/15 via-black/60 to-cyan-400/15 p-7 text-center backdrop-blur-xl">
             <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Say hello</div>
             <div className="mt-1 text-2xl font-black md:text-3xl">
               <ScatterText id="cta-title" text="This was just the trailer." />
             </div>
             <p className="mx-auto mt-2 max-w-sm text-[13px] text-white/65">
-              The full MindMate app adds live chat, mic input, Gemini brain and real-time TTS. Same stage, no script.
+              The full MindMate app adds live chat, mic input, a Gemini brain with live web lookup, background Jules coding quests with PR delivery, and real-time TTS. Same agent, same stage, no script.
             </p>
             <div className="mt-5 flex items-center justify-center gap-3">
               <a href="http://127.0.0.1:3000" className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-black transition hover:scale-105">
@@ -628,7 +627,7 @@ export default function Landing() {
             <div className="mt-4 text-[11px] text-white/40">landing demo · static audio · {models.length} models · {anims.length} animations</div>
           </motion.div>
         </section>
-        <footer className="relative z-10 pb-32 text-center text-[11px] text-white/35">
+        <footer className="pointer-events-none relative z-10 pb-32 text-center text-[11px] text-white/35">
           MindMate landing — Aiko & Yuki will remember you scrolled. 👀
         </footer>
       </div>

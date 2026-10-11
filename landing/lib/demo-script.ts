@@ -115,6 +115,8 @@ export const SCROLL_LINES: Record<string, string> = {
 export const TOUCH_LINES: Record<string, string> = {
   "card-knowledge": "Ooh, my brain! Careful — it's full of Rahim facts.",
   "card-voice": "My voice! Press Dance and I'll prove it.",
+  "card-web": "My browser brain! When my facts run out I peek at the live internet, then tell you on stage.",
+  "card-quests": "Shh — same me, background questing. Jules codes while I keep chatting, then I drop the PR link.",
   "card-stage": "The stage! That's where I live. Nice place, right?",
   "how-1": "Step one: you press, I perform. I'm very good at my job.",
   "how-2": "Two models, double trouble. Pick your favorite. (It's me.)",
