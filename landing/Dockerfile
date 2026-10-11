@@ -23,7 +23,7 @@ RUN bun run build
 EXPOSE 8081
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8081}/api/models || exit 1
+  CMD curl -f http://127.0.0.1:${PORT:-8081}/api/models || exit 1
 
 # PORT is injected by compose (.env LANDING_PORT); default 8081.
 CMD ["sh", "-c", "bun run start -- --port ${PORT:-8081} --hostname 0.0.0.0"]

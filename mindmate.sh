@@ -14,7 +14,8 @@
 #   - Falls back to plain `podman pod` commands — no extra dependencies.
 #   - `clean` is intentionally APP-ONLY: it never runs `podman system prune -a`
 #     so unrelated containers/images/volumes are left untouched.
-#   - Config via .env (see .env.example): GEMINI_API_KEY, FRONTEND_PORT, TTS_PORT.
+#   - Config via .env (see .env.example): GEMINI_API_KEY, JULES_API_KEY,
+#     JULES_SOURCE, JULES_STARTING_BRANCH, FRONTEND_PORT, TTS_PORT.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +54,7 @@ need_podman() { command -v podman >/dev/null 2>&1 || die "podman not found in PA
 
 check_assets() {
   local missing=0
-  for d in main/models main/animations main/background; do
+  for d in main/models main/animations; do
     [[ -d "$d" ]] || { echo "warning: $d missing (container will serve empty list)" >&2; missing=1; }
   done
   return 0
@@ -88,16 +89,18 @@ native_start() {
   info "Starting frontend ($FRONT_IMAGE) ..."
   local env_args=(--env PORT=8080 --env ASSETS_DIR=/assets)
   [[ -n "${GEMINI_API_KEY:-}" ]] && env_args+=(--env GEMINI_API_KEY="$GEMINI_API_KEY")
-  env_args+=(--env NEXT_PUBLIC_TTS_URL="http://localhost:${TTS_PORT}")
+  [[ -n "${JULES_API_KEY:-}" ]] && env_args+=(--env JULES_API_KEY="$JULES_API_KEY")
+  [[ -n "${JULES_SOURCE:-}" ]] && env_args+=(--env JULES_SOURCE="$JULES_SOURCE")
+  [[ -n "${JULES_STARTING_BRANCH:-}" ]] && env_args+=(--env JULES_STARTING_BRANCH="$JULES_STARTING_BRANCH")
+  env_args+=(--env NEXT_PUBLIC_TTS_URL="http://127.0.0.1:${TTS_PORT}")
   podman run -d --pod "$POD" --name mindmate-frontend --restart unless-stopped \
     "${env_args[@]}" \
     -v "$SCRIPT_DIR/main/models:/assets/models:ro" \
     -v "$SCRIPT_DIR/main/animations:/assets/animations:ro" \
-    -v "$SCRIPT_DIR/main/background:/assets/background:ro" \
     "$FRONT_IMAGE"
 
   echo ""
-  info "Up. Frontend: http://localhost:${FRONTEND_PORT}  TTS health: http://localhost:${TTS_PORT}/health"
+  info "Up. Frontend: http://127.0.0.1:${FRONTEND_PORT}  TTS health: http://127.0.0.1:${TTS_PORT}/health"
 }
 
 native_stop() {
@@ -122,7 +125,7 @@ compose_start() {
   # shellcheck disable=SC2086
   "${COMPOSE_CMD[@]}" up -d $build_flag
   echo ""
-  info "Up. Frontend: http://localhost:${FRONTEND_PORT}  TTS health: http://localhost:${TTS_PORT}/health"
+  info "Up. Frontend: http://127.0.0.1:${FRONTEND_PORT}  TTS health: http://127.0.0.1:${TTS_PORT}/health"
 }
 
 compose_stop() {

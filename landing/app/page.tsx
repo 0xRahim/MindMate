@@ -466,7 +466,7 @@ export default function Landing() {
               title="Elsewhere"
               items={[
                 { label: "GitHub", href: "https://github.com/0xRahim/MindMate" },
-                { label: "Live app", href: "http://localhost:3000" },
+                { label: "Live app", href: "http://127.0.0.1:3000" },
               ]}
             />
           </div>
@@ -618,7 +618,7 @@ export default function Landing() {
               The full MindMate app adds live chat, mic input, Gemini brain and real-time TTS. Same stage, no script.
             </p>
             <div className="mt-5 flex items-center justify-center gap-3">
-              <a href="http://localhost:3000" className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-black transition hover:scale-105">
+              <a href="http://127.0.0.1:3000" className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-black transition hover:scale-105">
                 Open the live app
               </a>
               <button onClick={() => onDemo("rahim")} className="rounded-xl border border-white/20 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-white/10">

@@ -25,6 +25,13 @@ import type { ChatPreset } from "@/lib/chat/api";
 
 export type ChatState = "" | "thinking" | "speaking" | "listening" | string;
 export type Phase = "idle" | "thinking" | "arming" | "performing";
+export type Framing = "closeup" | "mid" | "full";
+
+const FRAMING_PRESETS: Record<Framing, { dist: number; ty: number }> = {
+  closeup: { dist: 1.9, ty: 1.42 },
+  mid: { dist: 2.7, ty: 1.22 },
+  full: { dist: 3.4, ty: 1.0 },
+};
 
 export type EngineEvents = {
   onChatState: (s: ChatState) => void;
@@ -38,9 +45,8 @@ export type EngineEvents = {
   onAnims: (list: { name: string; url: string }[]) => void;
   onVrmStatus: (s: string) => void;
   onStageStatus: (s: string) => void;
-  onCharPos: (p: CharPos) => void;
-  onSofa: (s: string) => void;
   onMessage: (role: "user" | "bot" | "sys", text: string) => void;
+  onMascotScreen?: (x: number, y: number, scale: number) => void;
 };
 
 export type CharPos = { x: number; y: number; z: number; lift: number };
@@ -90,9 +96,13 @@ export class StageEngine {
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private analyserData: Uint8Array | null = null;
+  private timeBuf: Uint8Array<ArrayBuffer> | null = null;
   private nextStart = 0;
   private speaking = false;
   private synthActive = false;
+  // static SFX (boop/dodge/touch reactions) — shares the analyser + lip path
+  private sfxEl: HTMLAudioElement | null = null;
+  private sfxSpeaking = false;
   // scheduled-envelope lip driver: each chunk registers {start, end, level}
   private chunks: { start: number; end: number; level: number }[] = [];
   private mouthDrive = 0;
@@ -105,55 +115,93 @@ export class StageEngine {
   private idleCycleAt = Infinity;
   loopAnimation = true;
 
-  charPos: CharPos = { x: 1.35, y: 0, z: 1.0, lift: 0.02 };
-  // Living-floor height auto-detected from the sofa base (world Y).
-  // Character feet sit at groundY + lift. Falls back to 0 (void) if no sofa found.
-  groundY = 0;
+  charPos: CharPos = { x: 0, y: 0, z: 0, lift: 0.02 };
+  // Fixed origin stage (landing look) — feet rest on the disc at lift height.
+
+  // ── landing stage systems ──────────────────────────────────────────
+  // VRM lives under charRoot so position/rotation/scale tricks compose.
+  private charRoot = new THREE.Group();
+  private framing: Framing = "closeup";
+  private framingAuto: Framing | null = null;
+  private flash = 0;
+  private rim: THREE.DirectionalLight | null = null;
+  // gaze + boop + dodge
+  private lookNX = 0;
+  private lookNY = 0;
+  private lookX = 0;
+  private lookY = 0;
+  private vy = 0;
+  private hopY = 0;
+  private hopping = false;
+  private nudgeX = 0;
+  // scroll director pose (landing parity): eased toward targets each tick
+  private targetX = 0;
+  private targetRotY = 0;
+  private walkTarget = 0;
+  private walkAmt = 0;
+  private targetDepth = 0;
+  private depth = 0;
+  private mascotFrame = 0;
   private gltfLoader = new GLTFLoader();
-  // Dedicated plugin-free loader for the loft interior. The shared loader has
-  // VRMLoaderPlugin registered (needed for VRM); it must not touch plain GLBs.
-  private bgLoader = new GLTFLoader();
-  private bgRetried = false;
   private blobUrl: string | null = null;
 
   constructor(wrap: HTMLElement, ev: EngineEvents) {
     this.wrap = wrap;
     this.ev = ev;
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
-    this.camera.position.set(0, 1.45, 3);
+    this.camera.position.set(0, 1.55, 1.9);
     this.gltfLoader.register((p) => new VRMLoaderPlugin(p));
     this.initScene();
-    this.loadBackground();
     this.tick();
   }
 
   // ── scene ──────────────────────────────────────────────────────────────
   private initScene() {
-    this.scene.background = new THREE.Color(0x08090f);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.scene.background = null; // transparent — CSS gradient shows through
+    this.scene.fog = new THREE.Fog(0x0a0618, 6, 14);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.wrap.appendChild(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.target.set(0, 1.35, 0);
+    this.controls.enablePan = false;
+    this.controls.minDistance = 1.4;
+    this.controls.maxDistance = 8;
+    this.controls.target.set(0, 1.42, 0);
     this.controls.update();
-    this.scene.add(new THREE.HemisphereLight(0xffe8cc, 0x1a1008, 0.65));
-    const kl = new THREE.DirectionalLight(0xfff5e0, 2.0);
+    this.scene.add(new THREE.HemisphereLight(0xffe8ff, 0x14092b, 0.9));
+    const kl = new THREE.DirectionalLight(0xfff1de, 2.2);
     kl.position.set(2, 4, 3);
     kl.castShadow = true;
     kl.shadow.mapSize.set(1024, 1024);
     this.scene.add(kl);
-    const fl = new THREE.DirectionalLight(0xd0c8ff, 0.5);
+    const fl = new THREE.DirectionalLight(0xc4b5fd, 0.7);
     fl.position.set(-2, 2, 2);
     this.scene.add(fl);
-    const rl = new THREE.DirectionalLight(0xffcf80, 0.45);
-    rl.position.set(0, 3, -2);
-    this.scene.add(rl);
+    this.rim = new THREE.DirectionalLight(0x22d3ee, 1.1);
+    this.rim.position.set(0, 3, -2.5);
+    this.scene.add(this.rim);
+    // stylized disc stage + glow ring (landing look)
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.6, 64),
+      new THREE.MeshStandardMaterial({ color: 0x141024, roughness: 0.55, metalness: 0.35, transparent: true, opacity: 0.92 }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.receiveShadow = true;
+    this.scene.add(disc);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(1.6, 1.72, 64),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.005;
+    this.scene.add(ring);
+    this.scene.add(this.charRoot);
     this.resize();
   }
 
@@ -163,69 +211,6 @@ export class StageEngine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
-  }
-
-  private loadBackground() {
-    const URL = "/background/loft_5_interior_for_free.glb";
-    this.ev.onStageStatus("Loading room…");
-    this.bgLoader.load(
-      URL,
-      ({ scene: bg }) => {
-        const box = new THREE.Box3().setFromObject(bg);
-        const sz = box.getSize(new THREE.Vector3());
-        const ctr = box.getCenter(new THREE.Vector3());
-        let s = 4.0 / sz.y;
-        if (!isFinite(s) || s <= 0) {
-          console.warn("[BG] degenerate bounds, falling back to scale 1:", sz);
-          this.ev.onStageStatus("Room has bad bounds — shown unscaled.");
-          s = 1;
-        }
-        bg.scale.setScalar(s);
-        bg.position.set(-ctr.x * s, -box.min.y * s, -ctr.z * s);
-        bg.traverse((o) => {
-          if ((o as THREE.Mesh).isMesh) {
-            (o as THREE.Mesh).receiveShadow = true;
-            const m = (o as THREE.Mesh).material as THREE.Material | undefined;
-            if (m) m.depthWrite = true;
-          }
-        });
-        this.scene.add(bg);
-        this.scene.background = null;
-        this.ev.onStageStatus(
-          `Room ready (${sz.x.toFixed(1)}×${sz.y.toFixed(1)}×${sz.z.toFixed(1)} m)`,
-        );
-        const SOFA_RE = /sofa|couch|settee|divan|loveseat|sectional/i;
-        let sofa: THREE.Object3D | null = null;
-        bg.traverse((o) => {
-          if (!sofa && (o as THREE.Mesh).isMesh && SOFA_RE.test(o.name)) sofa = o;
-        });
-        if (sofa) {
-          const sb = new THREE.Box3().setFromObject(sofa);
-          const sc = sb.getCenter(new THREE.Vector3());
-          // The sofa rests ON the living floor — its base is the floor height.
-          // This is what lifts her out of the void under the room.
-          this.groundY = sb.min.y;
-          this.ev.onStageStatus(`Floor at +${this.groundY.toFixed(2)} m (sofa base)`);
-          this.setCharPos(sc.x, this.charPos.y, sb.max.z + 0.5, this.charPos.lift, true);
-        } else {
-          this.ev.onSofa("(use sliders)");
-        }
-      },
-      (xhr) => {
-        if (xhr.total) this.ev.onStageStatus(`Loading room… ${Math.round((xhr.loaded / xhr.total) * 100)}%`);
-      },
-      (e) => {
-        console.error("[BG] failed:", e);
-        if (!this.bgRetried) {
-          this.bgRetried = true;
-          this.ev.onStageStatus("Room load failed — retrying…");
-          setTimeout(() => this.loadBackground(), 3000);
-        } else {
-          this.ev.onStageStatus(`Room failed to load: ${e instanceof Error ? e.message : "unknown error"}`);
-          this.ev.onCaption("3D room failed to load — check console ([BG]). Character and chat still work.");
-        }
-      },
-    );
   }
 
   // ── bones / face ───────────────────────────────────────────────────────
@@ -274,9 +259,10 @@ export class StageEngine {
     }
     this.audioCtx = new AudioContext({ sampleRate: 24000, latencyHint: "playback" });
     this.analyser = this.audioCtx.createAnalyser();
-    this.analyser.fftSize = 512;
-    this.analyser.smoothingTimeConstant = 0.6;
+    this.analyser.fftSize = 2048; // ~85ms RMS window @24kHz — stable loudness
+    this.analyser.smoothingTimeConstant = 0.4;
     this.analyserData = new Uint8Array(this.analyser.frequencyBinCount);
+    this.timeBuf = new Uint8Array(this.analyser.fftSize);
     this.analyser.connect(this.audioCtx.destination);
   }
 
@@ -317,6 +303,101 @@ export class StageEngine {
       }
     };
     return when;
+  }
+
+  // ── landing life: gaze, boop, dodge, mascot tracking, SFX ──────────
+  /** Cursor gaze target in normalized -1..1 space. */
+  setLook(nx: number, ny: number) {
+    this.lookNX = Math.max(-1, Math.min(1, nx));
+    this.lookNY = Math.max(-1, Math.min(1, ny));
+  }
+
+  /** Boop: hop impulse with gravity. Returns false if already airborne. */
+  boop(): boolean {
+    if (this.hopping || !this.vrm) return false;
+    this.hopping = true;
+    this.hopY = 0;
+    this.vy = 2.6;
+    this.juice();
+    return true;
+  }
+
+  /** Dodge sidestep impulse (decays over ~1s). dir: -1 left, +1 right. */
+  nudge(dir: number) {
+    this.nudgeX = Math.max(-1.4, Math.min(1.4, this.nudgeX + dir * 0.9));
+  }
+
+  /** Button-press juice: rim flash (camera pull is handled by framing). */
+  juice(color = 0x22d3ee) {
+    this.flash = 1;
+    if (this.rim) this.rim.color.setHex(color);
+  }
+
+  /** Any voice active — live TTS, synthesis, or static SFX. */
+  isSpeaking() {
+    return this.speaking || this.synthActive || this.sfxSpeaking;
+  }
+
+  /** Scroll director pose. x in world units, rotY radians, walking 0..1, depth 0..1. */
+  setStagePose(x: number, rotY: number, walking: number, depth = 0) {
+    this.targetX = x;
+    this.targetRotY = rotY;
+    this.walkTarget = walking > 0.5 ? 1 : 0;
+    this.targetDepth = Math.max(0, Math.min(1, depth));
+  }
+
+  isWalking() {
+    return this.walkTarget > 0.5 || this.walkAmt > 0.4;
+  }
+
+  /** Current mascot screen position (px) — for DOM proximity + hit tests. */
+  mascotScreen(): { x: number; y: number } {
+    const v = new THREE.Vector3();
+    this.charRoot.getWorldPosition(v);
+    v.y += 1.2 * this.charRoot.scale.x;
+    v.project(this.camera);
+    const w = this.wrap.clientWidth || 1;
+    const h = this.wrap.clientHeight || 1;
+    return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
+  }
+
+  /**
+   * Static SFX playback (boop/dodge/touch reactions) through the shared
+   * analyser so the RMS lip-sync drives the jaw. Resolves when done.
+   * Never touches the live TTS socket or the stage/commit machine.
+   */
+  async speakStatic(url: string): Promise<void> {
+    this.stopStatic();
+    return new Promise((resolve) => {
+      const el = new Audio(url);
+      el.preload = "auto";
+      this.sfxEl = el;
+      try {
+        this.ensureAudio();
+        if (this.audioCtx!.state === "suspended") void this.audioCtx!.resume();
+        const src = this.audioCtx!.createMediaElementSource(el);
+        src.connect(this.analyser!);
+      } catch { /* analyser optional — jaw falls back to flap */ }
+      this.sfxSpeaking = true;
+      const done = () => {
+        if (this.sfxEl !== el) return;
+        this.sfxSpeaking = false;
+        this.sfxEl = null;
+        if (!this.speaking) this.resetLip();
+        resolve();
+      };
+      el.onended = done;
+      el.onerror = () => setTimeout(done, 1200);
+      void el.play().catch(() => setTimeout(done, 1200));
+    });
+  }
+
+  stopStatic() {
+    try {
+      this.sfxEl?.pause();
+    } catch { /* noop */ }
+    this.sfxEl = null;
+    this.sfxSpeaking = false;
   }
 
   // ── TTS socket ─────────────────────────────────────────────────────────
@@ -506,6 +587,8 @@ export class StageEngine {
         this.activeAction = a;
         this.fbxPlaying = true;
         this.activeEmote = null as unknown as EmoteId;
+        // auto pull-back: full-body stage for performances, keep framing for idles
+        this.framingAuto = s.name && IDLE_PATTERNS.some((p) => p.test(s.name ?? "")) ? null : "full";
         this.ev.onAnimStatus("> " + s.name);
         this.ev.onNowPlaying(s.name);
         if (!s.loop) {
@@ -541,6 +624,7 @@ export class StageEngine {
       return;
     }
     this.phase = "idle";
+    this.framingAuto = null;
     const hold = this.expressionHold;
     this.expressionHold = null;
     setTimeout(() => {
@@ -556,12 +640,14 @@ export class StageEngine {
     this.staged = null;
     this.phase = "idle";
     this.expressionHold = null;
+    this.framingAuto = null;
     this.ev.onChatState("");
     this.startIdleLoop();
   }
 
   stopSpeaking() {
     this.socket?.emit("cancel");
+    this.stopStatic();
     this.speaking = false;
     this.synthActive = false;
     this.staged = null;
@@ -576,8 +662,7 @@ export class StageEngine {
       void this.audioCtx.suspend().then(() => this.audioCtx?.resume());
       this.nextStart = 0;
     }
-    this.ev.onAmp(0);
-    this.mouthDrive = 0;
+    this.resetLip();
     this.ev.onChatState("");
     this.startIdleLoop();
   }
@@ -611,16 +696,29 @@ export class StageEngine {
     // Procedural think emote is just activeEmote — overwritten by playEmote/commit.
   }
 
-  async sendChat(msg: string, history: { role: "user" | "assistant"; content: string }[], animUrlByName: Map<string, string>, voice: string, speed: number) {
+  async sendChat(msg: string, history: { role: "user" | "assistant"; content: string }[], animUrlByName: Map<string, string>, voice: string, speed: number, personaId: "aiko" | "yuki" = "aiko"): Promise<{ sessionId: string } | null> {
     const text = msg.trim();
-    if (!text) return;
+    if (!text) return null;
     this.ev.onMessage("user", text);
     this.playThinking();
     try {
       const { postChat } = await import("@/lib/chat/api");
-      const preset = await postChat(text, history);
-      this.ev.onMessage("bot", preset.text);
-      await this.performPreset(preset, animUrlByName, voice, speed);
+      const reply = await postChat(text, history, personaId);
+      for (const w of reply.warnings ?? []) this.ev.onMessage("sys", w);
+      if (reply.agent === "jules" && reply.sessionId) {
+        // Long task handed to Jules — no instant performance; the page polls
+        // the session and posts the PR link when it completes.
+        this.ev.onMessage("bot", reply.text);
+        this.ev.onMessage("sys", `⚙ Jules task started: ${reply.sessionTitle ?? "task"}${reply.sessionUrl ? ` — ${reply.sessionUrl}` : ""}`);
+        this.phase = "idle";
+        this.ev.onChatState("");
+        this.playEmote("idle");
+        this.startIdleLoop();
+        return { sessionId: reply.sessionId };
+      }
+      this.ev.onMessage("bot", reply.text);
+      await this.performPreset(reply, animUrlByName, voice, speed);
+      return null;
     } catch (e) {
       console.error(e);
       this.ev.onMessage("sys", "Error: " + (e as Error).message);
@@ -628,6 +726,7 @@ export class StageEngine {
       this.ev.onChatState("");
       this.playEmote("idle");
       this.startIdleLoop();
+      return null;
     }
   }
 
@@ -705,6 +804,7 @@ export class StageEngine {
     this.activeAction = action;
     this.fbxPlaying = true;
     this.activeEmote = null as unknown as EmoteId;
+    this.framingAuto = IDLE_PATTERNS.some((p) => p.test(name)) ? null : "full";
     this.ev.onAnimStatus("> " + name);
     this.ev.onNowPlaying(name);
   }
@@ -714,6 +814,7 @@ export class StageEngine {
     this.autoIdle = false;
     this.idleCycleAt = Infinity;
     this.phase = "idle";
+    this.framingAuto = null;
     this.activeAction?.fadeOut(0.3);
     const cur = this.activeAction;
     setTimeout(() => cur?.stop(), 350);
@@ -735,6 +836,7 @@ export class StageEngine {
     this.activeEmote = id;
     this.autoIdle = false;
     this.idleCycleAt = Infinity;
+    this.framingAuto = null;
     if (this.fbxPlaying) {
       this.activeAction?.fadeOut(0.3);
       const cur = this.activeAction;
@@ -788,42 +890,34 @@ export class StageEngine {
     this.fbxPlaying = true;
     this.autoIdle = true;
     this.activeEmote = null as unknown as EmoteId;
+    this.framingAuto = null; // idle always plays in the default framing
     this.idleCycleAt = this.clock.elapsedTime + (18 + Math.random() * 12);
   }
 
-  // ── position / camera ──────────────────────────────────────────────────
-  /** World Y of her feet: detected living floor + manual lift trim. */
+  // ── position / camera (fixed origin stage) ───────────────────────────
+  /** World Y of her feet: disc level + lift trim. */
   feetY() {
-    return this.groundY + this.charPos.lift;
-  }
-
-  setCharPos(x: number, y: number, z: number, lift = this.charPos.lift, fromAuto = false) {
-    this.charPos = { x, y, z, lift };
-    if (fromAuto) this.ev.onSofa("✓ sofa detected");
-    this.ev.onCharPos({ ...this.charPos });
-    this.applyCharPos();
-  }
-
-  applyCharPos() {
-    if (!this.vrm) return;
-    const f = this.feetY();
-    this.vrm.scene.position.set(this.charPos.x, f, this.charPos.z);
-    this.controls.target.set(this.charPos.x, f + this.charPos.y + 1.35, this.charPos.z);
-    this.controls.update();
+    return this.charPos.lift;
   }
 
   setCamHome() {
     const f = this.feetY();
-    // Closer interior framing: ~2.2 m back at eye level.
-    this.camera.position.set(this.charPos.x, f + this.charPos.y + 1.45, this.charPos.z + 2.2);
-    this.controls.target.set(this.charPos.x, f + this.charPos.y + 1.35, this.charPos.z);
+    // Snap to the current framing preset (debug "Reset view").
+    const preset = FRAMING_PRESETS[this.framingAuto ?? this.framing];
+    this.camera.position.set(this.charPos.x, f + this.charPos.y + preset.ty, this.charPos.z + preset.dist);
+    this.controls.target.set(this.charPos.x, f + this.charPos.y + preset.ty, this.charPos.z);
     this.controls.update();
+  }
+
+  /** Chapter-level framing default (dashboard opens on close-up). */
+  setFraming(f: Framing) {
+    this.framing = f;
   }
 
   // ── VRM ────────────────────────────────────────────────────────────────
   private onVRMLoaded(v: VRM, name: string) {
     if (this.vrm?.scene) {
-      this.scene.remove(this.vrm.scene);
+      this.charRoot.remove(this.vrm.scene);
       this.disposeVRM(this.vrm.scene);
     }
     this.vrm = v;
@@ -837,8 +931,12 @@ export class StageEngine {
     VRMUtils.removeUnnecessaryVertices(v.scene);
     (VRMUtils as unknown as { combineSkeletons?: (s: THREE.Object3D) => void }).combineSkeletons?.(v.scene);
     v.scene.rotation.y = Math.PI;
-    this.scene.add(v.scene);
-    v.scene.position.set(this.charPos.x, this.feetY(), this.charPos.z);
+    v.scene.position.set(0, 0, 0);
+    this.charRoot.add(v.scene);
+    this.charRoot.rotation.set(0, 0, 0);
+    this.charRoot.scale.setScalar(1);
+    this.hopping = false;
+    this.nudgeX = 0;
     v.scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         (o as THREE.Mesh).castShadow = true;
@@ -846,11 +944,14 @@ export class StageEngine {
       }
     });
     this.resetFace();
+    this.charRoot.position.set(this.charPos.x, this.feetY(), this.charPos.z);
     this.setCamHome();
     this.clipCache.clear();
     this.ev.onVrmStatus("Loaded " + name);
     this.ev.onCaption(name + " ready.");
     this.activeEmote = "idle";
+    // entrance pop
+    v.scene.scale.setScalar(0.01);
     void this.preloadAnimations(() => {});
   }
 
@@ -926,22 +1027,54 @@ export class StageEngine {
     return 0;
   }
 
+  private resetLip() {
+    this.mouthDrive = 0;
+    this.setExpr("aa", 0);
+    this.setExpr("ou", 0);
+    this.setExpr("ih", 0);
+    this.setExpr("ee", 0);
+    this.ev.onAmp(0);
+  }
+
+  /**
+   * Jaw follows true loudness: RMS envelope, silence gate, syllable-rate
+   * flutter, capped range — flaps like speech instead of hanging open.
+   * Driven by the shared analyser, so live TTS chunks and static SFX
+   * both move the mouth through this one path.
+   */
   private updateLipSync() {
+    const voicing = this.speaking || this.sfxSpeaking;
     let target = 0;
-    if (this.speaking && this.ttsConnected && this.audioCtx) {
-      // Scheduled-envelope driver: mouth opens exactly with audible sound.
-      target = this.envelopeLevel(this.audioCtx.currentTime);
-      const pct = Math.min(99, Math.round(target * 100));
-      this.ev.onAmp(pct);
-    } else if (this.speaking) {
+    if (voicing && this.analyser && this.timeBuf) {
+      this.analyser.getByteTimeDomainData(this.timeBuf);
+      let sum = 0;
+      for (let i = 0; i < this.timeBuf.length; i++) {
+        const v = (this.timeBuf[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / this.timeBuf.length);
+      // speech RMS lives ~0.02–0.3; gate the floor, compress the rest
+      const gated = Math.max(0, rms - 0.02);
+      target = Math.pow(Math.min(1, gated / 0.18), 0.7);
+    } else if (voicing) {
       target = THREE.MathUtils.clamp(0.1 + 0.45 * (0.5 + 0.5 * Math.sin((this.clock.elapsedTime + this.mouthSeed) * 13)), 0, 1);
     }
-    this.mouthDrive = THREE.MathUtils.lerp(this.mouthDrive, target, 0.35);
-    this.setExpr("aa", this.mouthDrive * 0.9);
-    this.setExpr("ih", this.mouthDrive * 0.22);
-    this.setExpr("ou", this.mouthDrive * 0.15);
-    this.setExpr("ee", this.mouthDrive * 0.07);
-    if (!this.speaking) this.ev.onAmp(0);
+    // fast attack (jaw snaps open), slow release (eases shut)
+    const f = target > this.mouthDrive ? 0.6 : 0.22;
+    this.mouthDrive += (target - this.mouthDrive) * f;
+    if (!voicing && this.mouthDrive < 0.01) {
+      this.resetLip();
+      return;
+    }
+    // syllabic flutter so the jaw opens/closes per syllable
+    const t = this.clock.elapsedTime;
+    const flap = 0.55 + 0.45 * Math.sin(t * 2 * Math.PI * 5.5 + this.mouthSeed);
+    const jaw = Math.min(0.8, this.mouthDrive * flap * 0.9 + this.mouthDrive * 0.15);
+    this.setExpr("aa", Math.max(0, jaw));
+    this.setExpr("ou", Math.max(0, jaw * 0.25));
+    this.setExpr("ih", Math.max(0, jaw * 0.12));
+    this.setExpr("ee", Math.max(0, jaw * 0.07));
+    this.ev.onAmp(Math.round(Math.min(1, this.mouthDrive) * 100));
   }
 
   private updateBlink(dt: number) {
@@ -958,6 +1091,79 @@ export class StageEngine {
     this.raf = requestAnimationFrame(this.tick);
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const t = this.clock.elapsedTime;
+
+    // entrance scale pop (+ landing-squash recovery after a boop)
+    if (this.vrm) {
+      const sc = this.vrm.scene.scale;
+      if (sc.x < 1) {
+        sc.setScalar(Math.min(1, sc.x + dt * 2.2));
+      } else if (sc.y < sc.x * 0.999) {
+        sc.y += (sc.x - sc.y) * Math.min(1, dt * 10);
+      }
+    }
+
+    // scroll pose easing + stroll + dodge decay + hop offset
+    this.walkAmt += (this.walkTarget - this.walkAmt) * Math.min(1, dt * 6);
+    if (this.walkAmt < 0.002) this.walkAmt = 0;
+    this.nudgeX *= Math.max(0, 1 - dt * 1.8);
+    {
+      const k = 1 - Math.exp(-dt * 5);
+      this.depth += (this.targetDepth - this.depth) * k;
+      const ds = 1 + this.depth * 0.45;
+      this.charRoot.scale.setScalar(ds);
+      if (this.vrm && this.charRoot.scale.y < ds * 0.999 && !this.hopping && this.walkAmt <= 0.01) {
+        const s = this.charRoot.scale;
+        s.y += (ds - s.y) * Math.min(1, dt * 10);
+      }
+      const targetX = this.charPos.x + this.targetX + this.nudgeX;
+      this.charRoot.position.x += (targetX - this.charRoot.position.x) * k;
+      let dr = this.targetRotY - this.charRoot.rotation.y;
+      dr = Math.atan2(Math.sin(dr), Math.cos(dr));
+      this.charRoot.rotation.y += dr * k;
+      this.charRoot.position.z = this.charPos.z;
+    }
+    if (this.hopping) {
+      this.vy -= 9.5 * dt;
+      this.hopY += this.vy * dt;
+      if (this.hopY <= 0) {
+        this.hopY = 0;
+        this.hopping = false;
+        this.vy = 0;
+        if (this.vrm) this.vrm.scene.scale.y *= 0.88; // landing squash
+      }
+    }
+    if (this.vrm) {
+      let y = this.feetY() + this.hopY;
+      if (!this.hopping && this.walkAmt > 0.01) {
+        y += Math.abs(Math.sin(t * 7)) * 0.035 * this.walkAmt;
+        this.charRoot.rotation.z = Math.sin(t * 7) * 0.02 * this.walkAmt;
+        this.charRoot.rotation.x = 0.07 * this.walkAmt;
+      } else if (!this.hopping) {
+        const k = 1 - Math.exp(-dt * 5);
+        this.charRoot.rotation.z *= 1 - k;
+        this.charRoot.rotation.x *= 1 - k;
+      }
+      this.charRoot.position.y = y;
+    }
+
+    // flash decay + framing ease (target tracks her, distance eases)
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.5);
+    if (this.rim) this.rim.intensity = 1.1 + this.flash * 3;
+    {
+      const preset = FRAMING_PRESETS[this.framingAuto ?? this.framing];
+      const baseY = this.feetY() + this.charPos.y;
+      const ck = Math.min(1, dt * 2.5);
+      if (this.vrm) {
+        this.controls.target.x += (this.charRoot.position.x - this.controls.target.x) * ck;
+        this.controls.target.y += (baseY + preset.ty - this.controls.target.y) * ck;
+      }
+      const dir = this.camera.position.clone().sub(this.controls.target);
+      const len = Math.max(0.001, dir.length());
+      dir.multiplyScalar(1 / len);
+      const wantDist = Math.max(1.4, preset.dist - this.depth * 0.9 - Math.min(1, this.flash) * 0.35);
+      this.camera.position.lerp(this.controls.target.clone().addScaledVector(dir, wantDist), ck);
+    }
+
     this.controls.update();
     if (this.vrm) {
       if (this.mixer) this.mixer.update(dt);
@@ -972,11 +1178,42 @@ export class StageEngine {
         }
         (fn ?? EMOTE_MAP.idle)(this.getBone, t);
       }
+      // stroll arm swing — small additive layer on top of any clip,
+      // so she swings her arms even while the Idle FBX loops
+      if (this.walkAmt > 0.3 && !this.hopping) {
+        const sw = Math.sin(t * 7) * 0.28 * this.walkAmt;
+        const lU = this.getBone("leftUpperArm");
+        const rU = this.getBone("rightUpperArm");
+        if (lU) lU.rotation.x += sw;
+        if (rU) rU.rotation.x -= sw;
+      }
+      // gaze tracking — additive head/neck offset applied AFTER the mixer,
+      // so she follows the cursor even while a clip is playing.
+      this.lookX += (this.lookNX - this.lookX) * Math.min(1, dt * 4);
+      this.lookY += (this.lookNY - this.lookY) * Math.min(1, dt * 4);
+      try {
+        const hd = this.vrm.humanoid.getNormalizedBoneNode("head" as never) as unknown as THREE.Object3D | null;
+        const nk = this.vrm.humanoid.getNormalizedBoneNode("neck" as never) as unknown as THREE.Object3D | null;
+        if (hd) {
+          hd.rotation.y += this.lookX * 0.45;
+          hd.rotation.x -= this.lookNY * 0.28; // +lookNY = cursor up
+        }
+        if (nk) {
+          nk.rotation.y += this.lookX * 0.2;
+          nk.rotation.x -= this.lookNY * 0.12;
+        }
+      } catch { /* humanoid not ready */ }
       this.updateLipSync();
       this.updateBlink(dt);
       this.vrm.update(dt);
     }
     this.renderer.render(this.scene, this.camera);
+    // mascot screen pos for DOM proximity (every 3rd frame is plenty)
+    this.mascotFrame++;
+    if (this.mascotFrame % 3 === 0 && this.vrm) {
+      const p = this.mascotScreen();
+      this.ev.onMascotScreen?.(p.x, p.y, this.charRoot.scale.x);
+    }
   };
 
   setAutoBlink(v: boolean) {
@@ -987,6 +1224,7 @@ export class StageEngine {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.socket?.disconnect();
+    this.stopStatic();
     if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
     this.renderer.dispose();
     // Remove only our own canvas — never nuke the wrapper, it may hold React DOM.

@@ -5,7 +5,7 @@
 #   podman-compose up -d --build
 #   podman compose  up -d --build   (if using the podman compose plugin)
 #
-# The browser connects to TTS at http://localhost:5000 (editable in the UI),
+# The browser connects to TTS at http://127.0.0.1:5000 (editable in the UI),
 # and to the chat API same-origin at /api/chat, so no CORS/proxy tweaks needed.
 name: mindmate
 
@@ -19,7 +19,7 @@ services:
       - "${TTS_PORT:-5000}:5000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -38,19 +38,21 @@ services:
       PORT: "8080"
       ASSETS_DIR: "/assets"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
-      NEXT_PUBLIC_TTS_URL: "http://localhost:${TTS_PORT:-5000}"
+      JULES_API_KEY: "${JULES_API_KEY:-}"
+      JULES_SOURCE: "${JULES_SOURCE:-}"
+      JULES_STARTING_BRANCH: "${JULES_STARTING_BRANCH:-main}"
+      NEXT_PUBLIC_TTS_URL: "http://127.0.0.1:${TTS_PORT:-5000}"
     volumes:
       # Large 3D assets stay on the host and are mounted read-only.
       # Served by Next route handlers from ASSETS_DIR (lib/assets.ts).
       - ./main/models:/assets/models:ro
       - ./main/animations:/assets/animations:ro
-      - ./main/background:/assets/background:ro
     depends_on:
       tts:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/models"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/models"]
       interval: 30s
       timeout: 5s
       retries: 3

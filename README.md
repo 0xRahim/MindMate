@@ -76,11 +76,11 @@ Browser
   │      ├── 3D stage (three.js + three-vrm, Mixamo retarget)
   │      ├── A/V sync state machine (expression + animation commit on first audio)
   │      ├── /api/chat  (Gemini 2.5 Flash JSON mode + keyword fallback)
-  │      └── /models|/animations|/background  (serve 3D assets from main/)
+  │      └── /models|/animations  (serve 3D assets from main/)
   │
   ├── Kokoro TTS audio-model/ (:5000, Socket.IO PCM stream)
   │
-  └── main/{models,animations,background}/  (3D assets, bind-mounted read-only)
+  └── main/{models,animations}/  (3D assets, bind-mounted read-only)
 ```
 
 Future versions will replace the hardcoded knowledge layer with an Obsidian-backed knowledge system and expand the task harness into a full SDK-driven automation platform.
@@ -89,7 +89,7 @@ Future versions will replace the hardcoded knowledge layer with an Obsidian-back
 
 ```bash
 # Dev (frontend only, TTS optional at :5000)
-cd frontend && bun install && bun run dev     # http://localhost:3000
+cd frontend && bun install && bun run dev     # http://127.0.0.1:3000
 
 # Full stack (Podman)
 ./mindmate.sh start --build   # frontend :8080 + TTS :5000

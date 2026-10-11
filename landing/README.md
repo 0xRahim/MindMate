@@ -5,7 +5,7 @@ Animated static-demo landing page (separate Next.js app, port **3001** dev / **8
 ## Run
 
 ```bash
-cd landing && bun install && bun run dev     # http://localhost:3001
+cd landing && bun install && bun run dev     # http://127.0.0.1:3001
 bun run build && bun run start               # prod :8081
 ```
 
